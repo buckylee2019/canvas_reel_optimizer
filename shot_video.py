@@ -305,21 +305,68 @@ class ReelGenerator:
 
     def stitch_videos(self, video1_path: str, video2_path: str, output_path: str) -> str:
         """Stitch two videos together."""
-        clip1 = VideoFileClip(video1_path)
-        clip2 = VideoFileClip(video2_path)
-
-        final_clip = CompositeVideoClip([
-            clip1,
-            clip2.with_start(clip1.duration),
-        ])
-
-        final_clip.write_videofile(output_path)
-
-        clip1.close()
-        clip2.close()
-        final_clip.close()
+        print(f"      🔗 Starting individual video stitching...")
+        print(f"         Input 1: {video1_path}")
+        print(f"         Input 2: {video2_path}")
+        print(f"         Output: {output_path}")
         
-        return output_path
+        try:
+            # Validate input files
+            if not os.path.exists(video1_path):
+                print(f"         ❌ Video 1 does not exist: {video1_path}")
+                return None
+            if not os.path.exists(video2_path):
+                print(f"         ❌ Video 2 does not exist: {video2_path}")
+                return None
+            
+            # Get file sizes
+            size1 = os.path.getsize(video1_path)
+            size2 = os.path.getsize(video2_path)
+            print(f"         📊 Input sizes: {size1:,} bytes + {size2:,} bytes")
+            
+            # Load video clips
+            print(f"         📹 Loading video clips...")
+            clip1 = VideoFileClip(video1_path)
+            print(f"         ✅ Clip 1 loaded: {clip1.duration:.2f}s, {clip1.size}")
+            
+            clip2 = VideoFileClip(video2_path)
+            print(f"         ✅ Clip 2 loaded: {clip2.duration:.2f}s, {clip2.size}")
+            
+            # Create composite
+            print(f"         🎬 Creating composite video...")
+            final_clip = CompositeVideoClip([
+                clip1,
+                clip2.with_start(clip1.duration),
+            ])
+            
+            total_duration = clip1.duration + clip2.duration
+            print(f"         📏 Total duration: {total_duration:.2f}s")
+            
+            # Write output
+            print(f"         💾 Writing output video...")
+            final_clip.write_videofile(output_path, verbose=False, logger=None)
+            
+            # Cleanup
+            print(f"         🧹 Cleaning up clips...")
+            clip1.close()
+            clip2.close()
+            final_clip.close()
+            
+            # Verify output
+            if os.path.exists(output_path):
+                output_size = os.path.getsize(output_path)
+                print(f"         ✅ Stitching completed successfully!")
+                print(f"         📊 Output size: {output_size:,} bytes")
+                return output_path
+            else:
+                print(f"         ❌ Output file was not created")
+                return None
+                
+        except Exception as e:
+            print(f"         ❌ Error during stitching: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return None
 
     def add_timed_captions(self, video_path: str, output_path: str, captions: list, font: str = './yahei.ttf') -> None:
         """Add timed captions to video."""
@@ -455,35 +502,165 @@ def generate_shot_vidoes(reel_gen:ReelGenerator,image_files:list,reel_prompts:li
     return video_files
 
 def sistch_vidoes(reel_gen:ReelGenerator,video_files:list,shots:dict,timestamp:str):      
+    print(f"\n🎬 STARTING VIDEO STITCHING PROCESS")
+    print(f"=" * 50)
+    print(f"📝 Input parameters:")
+    print(f"   Video files count: {len(video_files)}")
+    print(f"   Shots count: {len(shots.get('shots', []))}")
+    print(f"   Timestamp: {timestamp}")
+    
+    # Validate input video files
+    print(f"\n📹 Validating input video files:")
+    valid_video_files = []
+    for i, video_file in enumerate(video_files):
+        print(f"   {i+1}. {video_file}")
+        if os.path.exists(video_file):
+            file_size = os.path.getsize(video_file)
+            print(f"      ✅ File exists, size: {file_size:,} bytes")
+            
+            # Check if it's a valid video file
+            try:
+                import subprocess
+                result = subprocess.run(['ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_format', video_file], 
+                                      capture_output=True, text=True, timeout=10)
+                if result.returncode == 0:
+                    print(f"      ✅ Valid video file")
+                    valid_video_files.append(video_file)
+                else:
+                    print(f"      ❌ Invalid video file (ffprobe failed)")
+            except Exception as e:
+                print(f"      ⚠️  Could not validate video: {str(e)}")
+                # Still add to valid files, might work
+                valid_video_files.append(video_file)
+        else:
+            print(f"      ❌ File does not exist!")
+    
+    print(f"\n📊 Validation results:")
+    print(f"   Total input videos: {len(video_files)}")
+    print(f"   Valid videos: {len(valid_video_files)}")
+    
+    if len(valid_video_files) < 2:
+        print(f"❌ ERROR: Need at least 2 valid videos for stitching, got {len(valid_video_files)}")
+        return None, None
+    
+    # Update video_files to only include valid ones
+    video_files = valid_video_files
+    
     # Stitch videos together
+    print(f"\n🔗 Starting video stitching process...")
     final_video = None
     caption_video_file = None  # Initialize caption_video_file
     prefix = random_string_name()
-    # timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    os.makedirs(os.path.join('generated_videos',timestamp), exist_ok=True) 
+    
+    # Create output directory
+    output_dir = os.path.join('generated_videos', timestamp)
+    os.makedirs(output_dir, exist_ok=True)
+    print(f"📁 Created output directory: {output_dir}")
+    
+    # Stitch videos in pairs
+    print(f"\n🎞️  Stitching {len(video_files)} videos...")
     for idx in range(len(video_files) - 1):
-        output_path = os.path.join('generated_videos',timestamp,f'{prefix}_stitched_{idx}.mp4')
+        output_path = os.path.join(output_dir, f'{prefix}_stitched_{idx}.mp4')
+        
         if not final_video:
-            final_video = reel_gen.stitch_videos(video_files[idx], video_files[idx + 1], output_path)
+            # First stitching operation
+            video1 = video_files[idx]
+            video2 = video_files[idx + 1]
+            print(f"   Step {idx+1}: Stitching first pair")
+            print(f"      Video 1: {os.path.basename(video1)}")
+            print(f"      Video 2: {os.path.basename(video2)}")
+            print(f"      Output: {os.path.basename(output_path)}")
+            
+            try:
+                final_video = reel_gen.stitch_videos(video1, video2, output_path)
+                if final_video and os.path.exists(final_video):
+                    file_size = os.path.getsize(final_video)
+                    print(f"      ✅ Stitching successful, output size: {file_size:,} bytes")
+                else:
+                    print(f"      ❌ Stitching failed - no output file created")
+                    return None, None
+            except Exception as e:
+                print(f"      ❌ Stitching failed with error: {str(e)}")
+                import traceback
+                traceback.print_exc()
+                return None, None
         else:
-            final_video = reel_gen.stitch_videos(final_video, video_files[idx + 1], output_path)
+            # Subsequent stitching operations
+            next_video = video_files[idx + 1]
+            print(f"   Step {idx+1}: Stitching with next video")
+            print(f"      Current result: {os.path.basename(final_video)}")
+            print(f"      Next video: {os.path.basename(next_video)}")
+            print(f"      Output: {os.path.basename(output_path)}")
+            
+            try:
+                new_final_video = reel_gen.stitch_videos(final_video, next_video, output_path)
+                if new_final_video and os.path.exists(new_final_video):
+                    file_size = os.path.getsize(new_final_video)
+                    print(f"      ✅ Stitching successful, output size: {file_size:,} bytes")
+                    final_video = new_final_video
+                else:
+                    print(f"      ❌ Stitching failed - no output file created")
+                    return None, None
+            except Exception as e:
+                print(f"      ❌ Stitching failed with error: {str(e)}")
+                import traceback
+                traceback.print_exc()
+                return None, None
+    
+    print(f"\n🎯 Video stitching completed!")
+    if final_video:
+        final_size = os.path.getsize(final_video)
+        print(f"   Final stitched video: {final_video}")
+        print(f"   Final video size: {final_size:,} bytes")
     
     # Add captions
+    print(f"\n📝 Adding captions to final video...")
     if final_video:
         duration = 6  # Duration per shot
         captions = []
-        for idx, shot in enumerate(shots['shots']):
+        
+        print(f"   Processing {len(shots.get('shots', []))} shots for captions...")
+        for idx, shot in enumerate(shots.get('shots', [])):
+            print(f"   Shot {idx+1}: {shot.get('caption', 'No caption')[:50]}...")
             desc_arr = reel_gen._split_caption(shot['caption'])
+            print(f"      Split into {len(desc_arr)} caption segments")
+            
             for idy, sub_desc in enumerate(desc_arr):
                 if sub_desc:  # Only add non-empty captions
                     start_time = idx * duration + (idy * duration / len(desc_arr))
                     end_time = idx * duration + ((idy + 1) * duration / len(desc_arr))
                     captions.append((sub_desc, start_time, end_time))
+                    print(f"         Caption {idy+1}: '{sub_desc[:30]}...' ({start_time:.1f}s - {end_time:.1f}s)")
         
-        caption_video_file = os.path.splitext(final_video)[0] + "_caption.mp4"
-        reel_gen.add_timed_captions(final_video, caption_video_file, captions)
-        print(f"Final video with captions saved to: {caption_video_file}")
-    return final_video,caption_video_file
+        print(f"   Total captions to add: {len(captions)}")
+        
+        if captions:
+            caption_video_file = os.path.splitext(final_video)[0] + "_caption.mp4"
+            print(f"   Caption output file: {caption_video_file}")
+            
+            try:
+                reel_gen.add_timed_captions(final_video, caption_video_file, captions)
+                if os.path.exists(caption_video_file):
+                    caption_size = os.path.getsize(caption_video_file)
+                    print(f"   ✅ Captions added successfully, size: {caption_size:,} bytes")
+                    print(f"   Final video with captions saved to: {caption_video_file}")
+                else:
+                    print(f"   ❌ Caption file was not created")
+            except Exception as e:
+                print(f"   ❌ Error adding captions: {str(e)}")
+                import traceback
+                traceback.print_exc()
+        else:
+            print(f"   ⚠️  No captions to add")
+    else:
+        print(f"   ❌ No final video to add captions to")
+    
+    print(f"\n🎉 STITCHING PROCESS COMPLETED")
+    print(f"   Final video: {final_video if final_video else 'None'}")
+    print(f"   Caption video: {caption_video_file if caption_video_file else 'None'}")
+    print(f"=" * 50)
+    
+    return final_video, caption_video_file
 
 def extract_last_frame(video_path: str, output_path: str):
     """

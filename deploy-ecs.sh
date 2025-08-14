@@ -5,13 +5,30 @@
 
 set -e
 
-# Configuration
-AWS_REGION="us-east-1"
-AWS_PROFILE="buckylee+test_224425919845"
-AWS_ACCOUNT_ID="224425919845"
-ECR_REPOSITORY="canvas-reel-optimizer"
-IMAGE_TAG="latest"
-STACK_NAME="canvas-reel-optimizer-ecs"
+# Load environment variables from .env file if it exists
+if [ -f ".env" ]; then
+    echo "Loading environment variables from .env file..."
+    export $(grep -v '^#' .env | xargs)
+fi
+
+# Configuration (with fallbacks to defaults)
+AWS_REGION="${AWS_REGION:-us-east-1}"
+AWS_PROFILE="${AWS_PROFILE:-default}"
+AWS_ACCOUNT_ID="${AWS_ACCOUNT_ID}"
+ECR_REPOSITORY="${ECR_REPOSITORY:-canvas-reel-optimizer}"
+IMAGE_TAG="${IMAGE_TAG:-latest}"
+STACK_NAME="${STACK_NAME:-canvas-reel-optimizer-ecs}"
+
+# Validate required environment variables
+if [ -z "$AWS_ACCOUNT_ID" ]; then
+    echo "❌ Error: AWS_ACCOUNT_ID is required. Please set it in .env file or environment."
+    echo "Example: AWS_ACCOUNT_ID=123456789012"
+    exit 1
+fi
+
+if [ -z "$AWS_PROFILE" ] || [ "$AWS_PROFILE" = "default" ]; then
+    echo "⚠️  Warning: Using default AWS profile. Set AWS_PROFILE in .env for specific profile."
+fi
 
 # Colors for output
 RED='\033[0;31m'

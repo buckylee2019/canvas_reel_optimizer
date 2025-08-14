@@ -7,6 +7,11 @@ __pycache__/
 generated_images/
 generated_videos/
 shot_images/
+
+# Environment files (sensitive configuration)
+.env
+.env.local
+.env.*.local
 # C extensions
 *.so
 reelvenv

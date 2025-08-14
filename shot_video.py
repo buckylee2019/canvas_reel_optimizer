@@ -223,6 +223,10 @@ class ReelGenerator:
 
     def generate_video(self, text_prompt: str, ref_image: str = None,seed:int = 0) -> dict:
         """Generate video from text prompt and optional reference image."""
+        print(f"Generating video with model: {self.MODEL_ID}")
+        print(f"Using bucket: {self.s3_bucket}")
+        print(f"Prompt: {text_prompt[:100]}...")
+        
         model_input = {
             "taskType": "TEXT_VIDEO",
             "textToVideoParams": {
@@ -237,6 +241,7 @@ class ReelGenerator:
         }
 
         if ref_image:
+            print(f"Using reference image: {ref_image}")
             with open(ref_image, "rb") as f:
                 image = f.read()
                 input_image_base64 = base64.b64encode(image).decode("utf-8")
@@ -249,7 +254,7 @@ class ReelGenerator:
 
         try:
             invocation = self.bedrock_runtime.start_async_invoke(
-                modelId="amazon.nova-reel-v1:0",
+                modelId=self.MODEL_ID,  # Use the configured model ID instead of hardcoded
                 modelInput=model_input,
                 outputDataConfig={
                     "s3OutputDataConfig": {
@@ -257,6 +262,7 @@ class ReelGenerator:
                     }
                 }
             )
+            print(f"✅ Video generation started successfully: {invocation['invocationArn']}")
             return invocation
         except Exception as e:
             print(f"Error generating video: {str(e)}")
@@ -424,21 +430,53 @@ def generate_reel_prompts(reel_gen:ReelGenerator, shots:dict,image_files:list, s
 def generate_shot_vidoes(reel_gen:ReelGenerator,image_files:list,reel_prompts:list):        
     # Generate videos
     invocation_arns = []
-    for prompt, image_file in zip(reel_prompts, image_files):
-        invocation = reel_gen.generate_video(prompt, image_file)
-        if invocation:
-            invocation_arns.append(invocation['invocationArn'])
+    print(f"Starting video generation for {len(image_files)} shots...")
     
+    for i, (prompt, image_file) in enumerate(zip(reel_prompts, image_files)):
+        print(f"Generating video {i+1}/{len(image_files)}: {image_file}")
+        print(f"Using prompt: {prompt[:100]}...")
+        
+        try:
+            invocation = reel_gen.generate_video(prompt, image_file)
+            if invocation:
+                invocation_arns.append(invocation['invocationArn'])
+                print(f"✅ Video {i+1} invocation started: {invocation['invocationArn']}")
+            else:
+                print(f"❌ Failed to start video {i+1} invocation")
+        except Exception as e:
+            print(f"❌ Error generating video {i+1}: {str(e)}")
+    
+    print(f"Started {len(invocation_arns)} video generation jobs")
+    
+    if not invocation_arns:
+        print("❌ No video generation jobs were started!")
+        return []
+
     # Wait for video generation to complete
-    final_responses = reel_gen.fetch_job_status(invocation_arns)
+    print("Waiting for video generation to complete...")
+    try:
+        final_responses = reel_gen.fetch_job_status(invocation_arns)
+        print(f"Received {len(final_responses)} completed jobs")
+    except Exception as e:
+        print(f"❌ Error fetching job status: {str(e)}")
+        return []
 
     # Download generated videos
     video_files = []
-    for response in final_responses:
-        output_uri = response['outputDataConfig']['s3OutputDataConfig']['s3Uri'] + '/output.mp4'
-        video_file = reel_gen.download_video_from_s3(output_uri, './generated_videos')
-        if video_file:
-            video_files.append(video_file)
+    for i, response in enumerate(final_responses):
+        try:
+            output_uri = response['outputDataConfig']['s3OutputDataConfig']['s3Uri'] + '/output.mp4'
+            print(f"Downloading video {i+1} from: {output_uri}")
+            video_file = reel_gen.download_video_from_s3(output_uri, './generated_videos')
+            if video_file:
+                video_files.append(video_file)
+                print(f"✅ Downloaded video {i+1}: {video_file}")
+            else:
+                print(f"❌ Failed to download video {i+1}")
+        except Exception as e:
+            print(f"❌ Error downloading video {i+1}: {str(e)}")
+    
+    print(f"Successfully generated {len(video_files)} videos")
     return video_files
 
 def sistch_vidoes(reel_gen:ReelGenerator,video_files:list,shots:dict,timestamp:str):      

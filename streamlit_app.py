@@ -639,10 +639,30 @@ def display_image_with_copy_button(image_input, label=""):
         return None
 
 def display_video(video_path, label=""):
-    """Display video"""
+    """Display video with download button"""
     if video_path and os.path.exists(video_path):
         st.video(video_path)
-        st.caption(label)
+        
+        # Create columns for caption and download button
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            st.caption(label)
+        with col2:
+            # Add download button
+            try:
+                with open(video_path, "rb") as file:
+                    video_bytes = file.read()
+                    # Get filename from path
+                    filename = os.path.basename(video_path)
+                    st.download_button(
+                        label="📥 Download",
+                        data=video_bytes,
+                        file_name=filename,
+                        mime="video/mp4",
+                        help=f"Download {label.lower() if label else 'video'}"
+                    )
+            except Exception as e:
+                st.error(f"Error preparing download: {str(e)}")
     return video_path
 
 def main():
@@ -1456,15 +1476,12 @@ def main():
                                     # Show both videos if captions were successfully added
                                     col1, col2 = st.columns(2)
                                     with col1:
-                                        st.video(final_video)
-                                        st.caption("Final Stitched Video")
+                                        display_video(final_video, "Final Stitched Video")
                                     with col2:
-                                        st.video(caption_video_file)
-                                        st.caption("Video with Captions")
+                                        display_video(caption_video_file, "Video with Captions")
                                 else:
                                     # Show only the final video if captions failed
-                                    st.video(final_video)
-                                    st.caption("Final Stitched Video")
+                                    display_video(final_video, "Final Stitched Video")
                                     if not caption_video_file:
                                         st.warning("Captions could not be added to the video")
                                 
@@ -1525,15 +1542,12 @@ def main():
                 # Show both videos if captions are available
                 col1, col2 = st.columns(2)
                 with col1:
-                    st.video(st.session_state.final_video)
-                    st.caption("Final Stitched Video")
+                    display_video(st.session_state.final_video, "Final Stitched Video")
                 with col2:
-                    st.video(st.session_state.caption_video)
-                    st.caption("Video with Captions")
+                    display_video(st.session_state.caption_video, "Video with Captions")
             else:
                 # Show only the final video if no captions
-                st.video(st.session_state.final_video)
-                st.caption("Final Stitched Video")
+                display_video(st.session_state.final_video, "Final Stitched Video")
                 if not st.session_state.get('caption_video'):
                     st.info("Caption video not available")
             
@@ -1568,8 +1582,7 @@ def main():
                         st.subheader("Individual Shot Videos")
                         for i, video_path in enumerate(st.session_state.generated_videos):
                             if os.path.exists(video_path):
-                                st.video(video_path)
-                                st.caption(f"Shot {i+1} Video")
+                                display_video(video_path, f"Shot {i+1} Video")
 
 if __name__ == "__main__":
     main()

@@ -34,7 +34,7 @@ class ReelGenerator:
             raise ValueError("Invalid S3 URI format")
         path_parts = bucket_name[5:].split('/', 1)
         self.s3_bucket =  path_parts[0]
-        self.session = boto3.session.Session(region_name=region)
+        self.session = boto3.session.Session(profile_name='bucky-nctu', region_name=region)
         self.bedrock_runtime = self.session.client(service_name='bedrock-runtime', config=config)
         self.MODEL_ID =model_id
 
@@ -424,32 +424,52 @@ def generate_shot_vidoes(reel_gen:ReelGenerator,image_files:list,reel_prompts:li
 def sistch_vidoes(reel_gen:ReelGenerator,video_files:list,shots:dict,timestamp:str):      
     # Stitch videos together
     final_video = None
+    caption_video_file = None  # Initialize caption_video_file
     prefix = random_string_name()
     # timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
     os.makedirs(os.path.join('generated_videos',timestamp), exist_ok=True) 
-    for idx in range(len(video_files) - 1):
-        output_path = os.path.join('generated_videos',timestamp,f'{prefix}_stitched_{idx}.mp4')
-        if not final_video:
-            final_video = reel_gen.stitch_videos(video_files[idx], video_files[idx + 1], output_path)
-        else:
-            final_video = reel_gen.stitch_videos(final_video, video_files[idx + 1], output_path)
+    
+    # Check if we have video files to stitch
+    if not video_files or len(video_files) == 0:
+        print("No video files to stitch")
+        return final_video, caption_video_file
+    
+    # If only one video, use it as final video
+    if len(video_files) == 1:
+        final_video = video_files[0]
+    else:
+        # Stitch multiple videos
+        for idx in range(len(video_files) - 1):
+            output_path = os.path.join('generated_videos',timestamp,f'{prefix}_stitched_{idx}.mp4')
+            if not final_video:
+                final_video = reel_gen.stitch_videos(video_files[idx], video_files[idx + 1], output_path)
+            else:
+                final_video = reel_gen.stitch_videos(final_video, video_files[idx + 1], output_path)
     
     # Add captions
-    if final_video:
-        duration = 6  # Duration per shot
-        captions = []
-        for idx, shot in enumerate(shots['shots']):
-            desc_arr = reel_gen._split_caption(shot['caption'])
-            for idy, sub_desc in enumerate(desc_arr):
-                if sub_desc:  # Only add non-empty captions
-                    start_time = idx * duration + (idy * duration / len(desc_arr))
-                    end_time = idx * duration + ((idy + 1) * duration / len(desc_arr))
-                    captions.append((sub_desc, start_time, end_time))
-        
-        caption_video_file = os.path.splitext(final_video)[0] + "_caption.mp4"
-        reel_gen.add_timed_captions(final_video, caption_video_file, captions)
-        print(f"Final video with captions saved to: {caption_video_file}")
-    return final_video,caption_video_file
+    if final_video and shots and 'shots' in shots:
+        try:
+            duration = 6  # Duration per shot
+            captions = []
+            for idx, shot in enumerate(shots['shots']):
+                desc_arr = reel_gen._split_caption(shot['caption'])
+                for idy, sub_desc in enumerate(desc_arr):
+                    if sub_desc:  # Only add non-empty captions
+                        start_time = idx * duration + (idy * duration / len(desc_arr))
+                        end_time = idx * duration + ((idy + 1) * duration / len(desc_arr))
+                        captions.append((sub_desc, start_time, end_time))
+            
+            if captions:  # Only add captions if we have any
+                caption_video_file = os.path.splitext(final_video)[0] + "_caption.mp4"
+                reel_gen.add_timed_captions(final_video, caption_video_file, captions)
+                print(f"Final video with captions saved to: {caption_video_file}")
+            else:
+                print("No captions to add")
+        except Exception as e:
+            print(f"Error adding captions: {str(e)}")
+            # If caption generation fails, we still have the final video
+    
+    return final_video, caption_video_file
 
 def extract_last_frame(video_path: str, output_path: str):
     """

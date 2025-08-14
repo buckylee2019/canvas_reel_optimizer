@@ -2,7 +2,7 @@ import json
 import boto3
 
 # Create the Bedrock Runtime client.
-bedrock_runtime = boto3.client("bedrock-runtime")
+bedrock_runtime = boto3.client("bedrock-runtime", profile_name='bucky-nctu')
 
 model_input = {
     "taskType": "TEXT_VIDEO",

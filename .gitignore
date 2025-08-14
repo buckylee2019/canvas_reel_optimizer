@@ -173,3 +173,36 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+# Project specific - Generated media files (but keep source assets)
+*.mp4
+*.avi
+*.mov
+*.png
+*.jpg
+*.jpeg
+*.gif
+
+# Keep important project assets
+!assets/
+!Amazon_Nova_Reel.pdf
+!yahei.ttf
+
+# AWS credentials (never commit these)
+.aws/
+credentials
+config
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+temp/
+tmp/
+*.tmp

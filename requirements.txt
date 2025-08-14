@@ -1,8 +1,22 @@
-boto3==1.35.86
-Pillow>=10.0.0
-python-magic>=0.4.27
-moviepy>=1.0.3
+# Core AWS and ML dependencies
+boto3>=1.35.86
 botocore>=1.31.0
-gradio==4.44.1
-opencv-python==4.10.0.84
-qrcode
+
+# Streamlit and web interface
+streamlit>=1.28.0
+gradio>=4.44.1
+
+# Image processing and computer vision
+Pillow>=10.0.0
+opencv-python>=4.10.0.84
+
+# Video processing
+moviepy>=1.0.3
+
+# Utility libraries
+python-magic>=0.4.27
+qrcode>=7.4.2
+
+# Data handling
+pandas>=1.5.0
+numpy>=1.24.0

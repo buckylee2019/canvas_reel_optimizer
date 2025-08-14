@@ -32,36 +32,54 @@ def parse_prompt(text: str, pattern: str = r"<prompt>(.*?)</prompt>") -> str:
 def process_image(image):
     if image is None:
         return None
-    # Convert to RGB if needed
-    if image.mode != 'RGB':
-        image = image.convert('RGB')
     
-    # Get current dimensions
-    width, height = image.size
-    
-    # Calculate scaling factor to ensure the smaller dimension is at least as large as target
-    scale_w = TARGET_WIDTH / width
-    scale_h = TARGET_HEIGHT / height
-    scale = max(scale_w, scale_h)
-    
-    # Scale image proportionally
-    new_width = int(width * scale)
-    new_height = int(height * scale)
-    image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
-    
-    # Crop from center to target dimensions
-    left = (new_width - TARGET_WIDTH) // 2
-    top = (new_height - TARGET_HEIGHT) // 2
-    right = left + TARGET_WIDTH
-    bottom = top + TARGET_HEIGHT
-    
-    image = image.crop((left, top, right, bottom))
-    return image
+    try:
+        print(f"Processing image - Original size: {image.size}, mode: {image.mode}")
+        
+        # Convert to RGB if needed
+        if image.mode != 'RGB':
+            print(f"Converting image from {image.mode} to RGB")
+            image = image.convert('RGB')
+        
+        # Get current dimensions
+        width, height = image.size
+        print(f"Image dimensions: {width}x{height}")
+        
+        # Calculate scaling factor to ensure the smaller dimension is at least as large as target
+        scale_w = TARGET_WIDTH / width
+        scale_h = TARGET_HEIGHT / height
+        scale = max(scale_w, scale_h)
+        print(f"Scale factor: {scale}")
+        
+        # Scale image proportionally
+        new_width = int(width * scale)
+        new_height = int(height * scale)
+        print(f"Scaling to: {new_width}x{new_height}")
+        image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+        
+        # Crop from center to target dimensions
+        left = (new_width - TARGET_WIDTH) // 2
+        top = (new_height - TARGET_HEIGHT) // 2
+        right = left + TARGET_WIDTH
+        bottom = top + TARGET_HEIGHT
+        print(f"Cropping from ({left}, {top}) to ({right}, {bottom})")
+        
+        image = image.crop((left, top, right, bottom))
+        print(f"Final processed image size: {image.size}, mode: {image.mode}")
+        return image
+        
+    except Exception as e:
+        print(f"Error in process_image: {str(e)}")
+        print(f"Error type: {type(e)}")
+        import traceback
+        traceback.print_exc()
+        raise e
 
 def download_video(s3_uri,output_dir):
     """Download video from S3 to local storage"""
     try:
-        s3_client = boto3.client('s3',region_name = aws_region_s3)
+        session = boto3.Session(profile_name='bucky-nctu', region_name=aws_region_s3)
+        s3_client = session.client('s3')
         
         if not s3_uri.startswith('s3://'):
             raise ValueError("Invalid S3 URI format")
@@ -83,7 +101,8 @@ def download_video(s3_uri,output_dir):
         return None
 
 def upload_to_s3(local_file, bucket, s3_file):
-    s3 = boto3.client('s3',region_name = aws_region_s3)
+    session = boto3.Session(profile_name='bucky-nctu', region_name=aws_region_s3)
+    s3 = session.client('s3')
     try:
         s3.upload_file(local_file, bucket, s3_file)
         logger.info(f"Upload Successful: {s3_file}")
@@ -96,7 +115,8 @@ def upload_to_s3(local_file, bucket, s3_file):
         return False
     
 def generate_s3_url(bucket, s3_file):
-    s3 = boto3.client('s3', region_name=aws_region_s3)
+    session = boto3.Session(profile_name='bucky-nctu', region_name=aws_region_s3)
+    s3 = session.client('s3')
     url = s3.generate_presigned_url('get_object',
                                     Params={'Bucket': bucket, 'Key': s3_file},
                                     ExpiresIn=3600*24*7)  # URL有效期为7天

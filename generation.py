@@ -21,7 +21,8 @@ from config import (
     DEFAULT_GUIDELINE,
     GENERATED_VIDEOS_DIR,
     REEL_MODEL_ID,
-    CANVAS_SIZE)
+    CANVAS_SIZE,
+    PRO_MODEL_ID)
 from utils import (
     random_string_name,
     load_guideline,
@@ -30,8 +31,8 @@ from utils import (
     download_video
 )
 
-# Initialize AWS clients
-session = boto3.session.Session(region_name='us-east-1')
+# Initialize AWS clients with bucky-nctu profile
+session = boto3.session.Session(profile_name='bucky-nctu', region_name='us-east-1')
 client = session.client(service_name='bedrock-runtime', 
                        config=Config(connect_timeout=600, read_timeout=600))
 bedrock_runtime = session.client("bedrock-runtime")
@@ -41,12 +42,11 @@ TARGET_WIDTH = 1280
 TARGET_HEIGHT = 720
 MAX_PROMPT_LENGTH = 512
 
-def optimize_prompt(prompt, guideline_path, model_name=MODEL_OPTIONS["Nova Pro"], image=None):
+def optimize_prompt(prompt, guideline_path, model_id=PRO_MODEL_ID, image=None):
     if image is not None:
         image = process_image(image)
     
     doc_bytes = load_guideline(guideline_path)
-    model_id = MODEL_OPTIONS[model_name]
     
     if image is None:
         # Text-only prompt optimization
@@ -115,7 +115,7 @@ def optimize_prompt(prompt, guideline_path, model_name=MODEL_OPTIONS["Nova Pro"]
     length = len(optimized)
     return optimized, f"{length} chars" + (" (Too Long!)" if length > MAX_PROMPT_LENGTH else "")
 
-def optimize_canvas_prompt(prompt, model_name="Nova Pro"):
+def optimize_canvas_prompt(prompt, model_id=PRO_MODEL_ID):
     """Optimize prompt for image generation using Canvas model"""
     system = [{"text": SYSTEM_CANVAS}]
     messages = [
@@ -130,7 +130,7 @@ def optimize_canvas_prompt(prompt, model_name="Nova Pro"):
     
     # Get response
     response = client.converse_stream(
-        modelId=MODEL_OPTIONS[model_name],
+        modelId=model_id,
         messages=messages,
         system=system,
         inferenceConfig=inf_params
@@ -248,8 +248,17 @@ def generate_single_image(prompt, negative_prompt="", quality="standard", num_im
         return None
 
 def generate_video(prompt, bucket, image=None, seed=0):
+    print(f"Starting video generation with prompt: {prompt[:50]}...")
+    print(f"Bucket: {bucket}")
+    print(f"Image provided: {image is not None}")
+    print(f"Image type: {type(image) if image is not None else 'None'}")
+    print(f"Seed: {seed}")
+    
     if image is not None:
+        print(f"Original image size: {image.size}")
         image = process_image(image)
+        print(f"Image processed successfully: {image.size}")
+        print(f"Image mode: {image.mode}")
     
     # Prepare model input
     model_input = {
@@ -267,10 +276,12 @@ def generate_video(prompt, bucket, image=None, seed=0):
     
     # Add image if provided
     if image is not None:
+        print("Adding image to model input...")
         img_byte_arr = io.BytesIO()
         image.save(img_byte_arr, format='PNG')
         img_bytes = img_byte_arr.getvalue()
         img_base64 = base64.b64encode(img_bytes).decode("utf-8")
+        print(f"Image encoded to base64, length: {len(img_base64)}")
         
         model_input['textToVideoParams']['images'] = [{
             "format": "png",
@@ -278,45 +289,300 @@ def generate_video(prompt, bucket, image=None, seed=0):
                 "bytes": img_base64
             }
         }]
+        print("Image successfully added to model input")
+    else:
+        print("No image provided - generating text-only video")
     print(bucket)
     # Start async video generation
-    invocation = bedrock_runtime.start_async_invoke(
-        modelId=REEL_MODEL_ID,
-        modelInput=model_input,
-        outputDataConfig={
-            "s3OutputDataConfig": {
-                "s3Uri": bucket
+    try:
+        print("Starting async video generation...")
+        print(f"Using model ID: {REEL_MODEL_ID}")
+        print(f"Model input keys: {list(model_input.keys())}")
+        
+        # Clean bucket name - remove s3:// prefix if present
+        clean_bucket = bucket.replace("s3://", "") if bucket.startswith("s3://") else bucket
+        print(f"Using clean bucket name: {clean_bucket}")
+        
+        invocation = bedrock_runtime.start_async_invoke(
+            modelId=REEL_MODEL_ID,
+            modelInput=model_input,
+            outputDataConfig={
+                "s3OutputDataConfig": {
+                    "s3Uri": f"s3://{clean_bucket}"
+                }
             }
-        }
-    )
+        )
+        print(f"Invocation started successfully: {invocation['invocationArn']}")
+    except Exception as e:
+        print(f"Error starting async invocation: {str(e)}")
+        print(f"Error type: {type(e)}")
+        import traceback
+        traceback.print_exc()
+        return None
     
     # Wait for completion
+    print("Waiting for video generation to complete...")
     while True:
-        response = bedrock_runtime.get_async_invoke(
-            invocationArn=invocation['invocationArn']
-        )
-        status = response["status"]
-        if status != 'InProgress':
-            break
-        time.sleep(10)
+        try:
+            response = bedrock_runtime.get_async_invoke(
+                invocationArn=invocation['invocationArn']
+            )
+            status = response["status"]
+            print(f"Video generation status: {status}")
+            if status != 'InProgress':
+                break
+            time.sleep(10)
+        except Exception as e:
+            print(f"Error checking async invocation status: {str(e)}")
+            return None
+    
+    if status != 'Completed':
+        print(f"Video generation failed with status: {status}")
+        if 'failureMessage' in response:
+            print(f"Failure message: {response['failureMessage']}")
+        return None
     
     # Download video
-    output_uri = f"{response['outputDataConfig']['s3OutputDataConfig']['s3Uri']}/output.mp4"
-    local_path = download_video(output_uri,GENERATED_VIDEOS_DIR)
+    try:
+        output_uri = f"{response['outputDataConfig']['s3OutputDataConfig']['s3Uri']}/output.mp4"
+        print(f"Downloading video from: {output_uri}")
+        local_path = download_video(output_uri,GENERATED_VIDEOS_DIR)
+        print(f"Video downloaded to: {local_path}")
+        return local_path
+    except Exception as e:
+        print(f"Error downloading video: {str(e)}")
+        return None
+    
+    return local_path
+
+
+def generate_video_with_model(prompt, bucket, model_id, image=None, seed=0, duration="5s"):
+    """
+    Generate video using specified model (Nova Reel or Luma Ray)
+    """
+    print(f"Starting video generation with model: {model_id}")
+    print(f"Prompt: {prompt[:50]}...")
+    print(f"Bucket: {bucket}")
+    print(f"Image provided: {image is not None}")
+    print(f"Image type: {type(image) if image is not None else 'None'}")
+    print(f"Seed: {seed}")
+    print(f"Duration: {duration}")
+    
+    # Get the appropriate region for the model
+    from config import MODEL_REGIONS
+    region = MODEL_REGIONS.get(model_id, "us-east-1")
+    print(f"Using region: {region}")
+    
+    # Create region-specific bedrock client with bucky-nctu profile
+    session_regional = boto3.Session(profile_name='bucky-nctu', region_name=region)
+    bedrock_runtime_regional = session_regional.client(
+        'bedrock-runtime',
+        config=Config(
+            region_name=region,
+            retries={'max_attempts': 10, 'mode': 'adaptive'},
+            max_pool_connections=50
+        )
+    )
+    
+    if image is not None:
+        print(f"Original image size: {image.size}")
+        image = process_image(image)
+        print(f"Image processed successfully: {image.size}")
+        print(f"Image mode: {image.mode}")
+    
+    # Prepare model input based on model type
+    if model_id.startswith("luma.ray"):
+        # Luma Ray format - based on official AWS documentation
+        model_input = {
+            "prompt": prompt,
+            "aspect_ratio": "16:9",
+            "duration": duration,  # "5s" or "9s"
+            "resolution": "720p",
+            "loop": False
+        }
+        
+        # For Luma Ray image-to-video, use keyframes structure
+        if image is not None:
+            print("Adding image to Luma Ray model input...")
+            img_byte_arr = io.BytesIO()
+            image.save(img_byte_arr, format='JPEG')  # Use JPEG for Luma Ray
+            img_bytes = img_byte_arr.getvalue()
+            img_base64 = base64.b64encode(img_bytes).decode("utf-8")
+            print(f"Image encoded to base64, length: {len(img_base64)}")
+            
+            # Luma Ray uses 'keyframes' with 'frame0' for image-to-video
+            model_input['keyframes'] = {
+                "frame0": {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/jpeg",
+                        "data": img_base64
+                    }
+                }
+            }
+            print("Image successfully added to Luma Ray model input as keyframe")
+        else:
+            print("Generating text-only video with Luma Ray")
+            
+    else:
+        # Nova Reel format
+        model_input = {
+            "taskType": "TEXT_VIDEO",
+            "textToVideoParams": {
+                "text": prompt,
+            },
+            "videoGenerationConfig": {
+                "durationSeconds": 6,
+                "fps": 24,
+                "dimension": "1280x720",
+                "seed": random.randint(0,858993459) if int(seed) == -1 else int(seed),
+            },
+        }
+        
+        # Add image if provided (for Nova Reel image-to-video)
+        if image is not None:
+            print("Adding image to Nova Reel model input...")
+            img_byte_arr = io.BytesIO()
+            image.save(img_byte_arr, format='PNG')
+            img_bytes = img_byte_arr.getvalue()
+            img_base64 = base64.b64encode(img_bytes).decode("utf-8")
+            print(f"Image encoded to base64, length: {len(img_base64)}")
+            
+            model_input['textToVideoParams']['images'] = [{
+                "format": "png",
+                "source": {
+                    "bytes": img_base64
+                }
+            }]
+            print("Image successfully added to Nova Reel model input")
+        else:
+            print("No image provided - generating text-only video with Nova Reel")
+    
+    print(bucket)
+    # Start async video generation
+    try:
+        print("Starting async video generation...")
+        print(f"Using model ID: {model_id}")
+        print(f"Model input keys: {list(model_input.keys())}")
+        
+        # Clean bucket name - remove s3:// prefix if present
+        clean_bucket = bucket.replace("s3://", "") if bucket.startswith("s3://") else bucket
+        print(f"Using clean bucket name: {clean_bucket}")
+        
+        invocation = bedrock_runtime_regional.start_async_invoke(
+            modelId=model_id,
+            modelInput=model_input,
+            outputDataConfig={
+                "s3OutputDataConfig": {
+                    "s3Uri": f"s3://{clean_bucket}"
+                }
+            }
+        )
+        print(f"Invocation started successfully: {invocation['invocationArn']}")
+    except Exception as e:
+        print(f"Error starting async invocation: {str(e)}")
+        print(f"Error type: {type(e)}")
+        import traceback
+        traceback.print_exc()
+        return None
+    
+    # Wait for completion
+    print("Waiting for video generation to complete...")
+    while True:
+        try:
+            response = bedrock_runtime_regional.get_async_invoke(
+                invocationArn=invocation['invocationArn']
+            )
+            status = response["status"]
+            print(f"Video generation status: {status}")
+            if status != 'InProgress':
+                break
+            time.sleep(10)
+        except Exception as e:
+            print(f"Error checking async invocation status: {str(e)}")
+            return None
+    
+    if status != 'Completed':
+        print(f"Video generation failed with status: {status}")
+        if 'failureMessage' in response:
+            print(f"Failure message: {response['failureMessage']}")
+        return None
+    
+    # Download video
+    try:
+        output_uri = f"{response['outputDataConfig']['s3OutputDataConfig']['s3Uri']}/output.mp4"
+        print(f"Downloading video from: {output_uri}")
+        local_path = download_video(output_uri,GENERATED_VIDEOS_DIR)
+        print(f"Video downloaded to: {local_path}")
+        return local_path
+    except Exception as e:
+        print(f"Error downloading video: {str(e)}")
+        return None
     
     return local_path
 
 
 
-def generate_comparison_videos(original_prompt, optimized_prompt, bucket, image=None, seed=0):
+def generate_comparison_videos_with_model(original_prompt, optimized_prompt, bucket, model_id, image=None, seed=0, duration="5s"):
+    # Create separate copies of the image for thread safety
+    image_original = None
+    image_optimized = None
+    
+    if image is not None:
+        print("Creating thread-safe image copies for comparison videos...")
+        try:
+            # Create a copy for the original video
+            image_original = image.copy()
+            # Create a copy for the optimized video  
+            image_optimized = image.copy()
+            print(f"Image copies created successfully: {image_original.size}, {image_optimized.size}")
+        except Exception as e:
+            print(f"Error creating image copies: {str(e)}")
+            # Fallback: create fresh images from the original
+            import io
+            import base64
+            try:
+                # Convert to bytes and back to create fresh copies
+                img_byte_arr = io.BytesIO()
+                image.save(img_byte_arr, format='PNG')
+                img_bytes = img_byte_arr.getvalue()
+                
+                image_original = Image.open(io.BytesIO(img_bytes))
+                image_optimized = Image.open(io.BytesIO(img_bytes))
+                print(f"Fresh image copies created from bytes: {image_original.size}, {image_optimized.size}")
+            except Exception as e2:
+                print(f"Error creating fresh image copies: {str(e2)}")
+                # If all else fails, generate without images
+                image_original = None
+                image_optimized = None
+    
     # Create a thread pool executor
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-        # Submit both video generation tasks
-        future_original = executor.submit(generate_video, original_prompt, bucket, image, seed)
-        future_optimized = executor.submit(generate_video, optimized_prompt, bucket, image, seed)
+        # Submit both video generation tasks with separate image copies
+        future_original = executor.submit(generate_video_with_model, original_prompt, bucket, model_id, image_original, seed, duration)
+        future_optimized = executor.submit(generate_video_with_model, optimized_prompt, bucket, model_id, image_optimized, seed, duration)
         
         # Wait for both tasks to complete
         original_video = future_original.result()
         optimized_video = future_optimized.result()
     
     return original_video, optimized_video
+
+
+# Keep the original function name for backward compatibility
+def generate_comparison_videos(original_prompt, optimized_prompt, bucket, image=None, seed=0):
+    """
+    Backward compatibility wrapper - uses Nova Reel by default
+    """
+    from config import REEL_MODEL_ID
+    return generate_comparison_videos_with_model(original_prompt, optimized_prompt, bucket, REEL_MODEL_ID, image, seed)
+
+
+# Keep backward compatibility for single video generation too
+def generate_video(prompt, bucket, image=None, seed=0):
+    """
+    Backward compatibility wrapper for the original generate_video function - uses Nova Reel by default
+    """
+    from config import REEL_MODEL_ID
+    return generate_video_with_model(prompt, bucket, REEL_MODEL_ID, image, seed)

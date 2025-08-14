@@ -1,110 +1,248 @@
-# Nova Reel Prompt Optimizer
+# 🎬 Nova Canvas & Reel Optimizer
 
-A Gradio web interface for optimizing prompts and generating videos using Amazon's Nova [Canvas and Reel model](https://docs.aws.amazon.com/nova/latest/userguide/content-generation.html).
+A comprehensive Streamlit application for optimizing prompts and generating images/videos using Amazon's Nova Canvas and Reel models, featuring AI-powered suggestions and advanced outpainting capabilities.
 
-## Update Logs
-### 12/30/2024
-- Add Long Video Generation.  
-Expand an input from the user, generate a storyboard, create breakdown shots, and generate a long video
-* 1. ```Prompt:我心目中的AWS像一柄利剑，帮我在数字化转型的道路上披荆斩棘。``` [video demo1 file](assets/aws_stitched_1_caption.mp4)
-- ![video demo1 file](assets/video_demo.gif)
+![Nova Canvas & Reel Optimizer](assets/video_demo.gif)
 
-* 2. ```Prompt:wonderful under sea world``` [video demo2 file](assets/4p6jvyq58l7q_stitched_1_caption.mp4) 
-- ![video demo2 file](assets/video_demo2.gif)
+## ✨ Features
 
+### 🖼️ **Image Generation with Nova Canvas**
+- **Text-to-Image Generation**: Create images from text prompts with optimization
+- **Image-to-Image Outpainting**: Upload images and extend/edit them with AI
+- **AI-Powered Suggestions**: Claude Sonnet 4 analyzes images and suggests:
+  - Smart mask prompts for targeting specific areas
+  - Creative themes for outpainting and enhancement
+- **Intelligent Resizing**: Resize images to different dimensions with AI fill
+- **Comparison Mode**: Generate and compare original vs optimized prompts
+- **Advanced Controls**: Seed, CFG scale, aspect ratio, and quality settings
 
-example:
-### 1/6/2025
-- Add QR Code generation for long video. The viewers can download the artifacts in their phone
+### 🎥 **Video Generation with Nova Reel**
+- **Text-to-Video**: Generate videos from text descriptions
+- **Image-to-Video**: Convert images to videos with motion
+- **Multiple Model Support**: Nova Reel and Luma Ray models
+- **Prompt Optimization**: AI-enhanced prompts for better video results
+- **Comparison Videos**: Side-by-side original vs optimized results
 
-### 12/23/2024
-- Add seed, cfg scale, Aspect ratio
-- Add option to enable/disable comparison mode 
+### 🎬 **Long Video Generation**
+- **Story-to-Video Pipeline**: Transform stories into multi-shot videos
+- **Automatic Storyboarding**: AI breaks down stories into scenes
+- **Shot Generation**: Create individual video clips for each scene
+- **Video Stitching**: Combine clips into cohesive long-form videos
+- **Caption Generation**: Add captions to final videos
+- **Progress Tracking**: Real-time progress for complex workflows
 
-## Features
-- Text prompt optimization for Nova Canvas image generation
-- Text prompt optimization for Nova Reel video generation
-- 1-click automatically optimize any languages & any prompts, with the reference of Nova official guideline.
-- 1-click to copy the generated image from Canvas to for Reel video generation
-- Real-time prompt optimization using Nova
-- Comparison Videos generation from original prompt and optimized prompt
-- User-friendly web interface
+### 🤖 **AI-Powered Intelligence**
+- **Claude Sonnet 4 Integration**: Advanced image analysis and suggestions
+- **Context-Aware Recommendations**: Understands image content and composition
+- **Smart Prompt Generation**: Optimized prompts based on Amazon Nova guidelines
+- **Automatic Error Recovery**: Intelligent handling of generation failures
 
-## Prerequisites
+## 🚀 Quick Start
 
+### Prerequisites
 - Python 3.10+
-- AWS credentials configured with access to Bedrock and S3
-- An S3 bucket for video output (You can copy the default bucket created from Nova Reel when you first time play with it in Bedrock Console)
+- AWS credentials configured with access to:
+  - Amazon Bedrock (Nova Canvas, Nova Reel, Claude Sonnet 4)
+  - S3 bucket for video output
+- Sufficient AWS permissions for model access
 
-## Installation
+### Installation
 
-1. Install the required Python packages:
+1. **Clone the repository**:
+```bash
+git clone https://github.com/buckylee2019/canvas_reel_optimizer.git
+cd canvas_reel_optimizer
+```
 
+2. **Install dependencies**:
 ```bash
 pip install -r requirements.txt
 ```
 
-2. Make sure you have AWS credentials configured with appropriate permissions for:
-   - Amazon Nova Pro/Lite/Canvas and Reel
-   - S3 bucket access
+3. **Configure AWS credentials**:
+```bash
+aws configure
+# or set environment variables:
+export AWS_ACCESS_KEY_ID=your_access_key
+export AWS_SECRET_ACCESS_KEY=your_secret_key
+export AWS_DEFAULT_REGION=us-east-1
+```
 
-3. Update the S3 bucket name in WebUI or you can change it in `config.py` `DEFAULT_BUCKET=`:
-![alt text](assets/image1.png)
+4. **Update configuration**:
+   - Edit `config.py` to set your S3 bucket name
+   - Verify model IDs and regions match your AWS setup
 
-## Usage
-1. Start the Gradio interface:
+### Running the Application
 
+**Streamlit Interface** (Recommended):
+```bash
+streamlit run streamlit_app.py
+```
+
+**Gradio Interface** (Legacy):
 ```bash
 python app.py
 ```
 
-2. Open your web browser and navigate to the URL shown in the terminal (typically http://127.0.0.1:7860)
+Open your browser to the displayed URL (typically http://localhost:8501 for Streamlit)
 
-3. Image generation
-![alt text](assets/image2.png)
-   - Enter your prompt in the text box
-   - Click "Optimze Prompt" to start the create Optimized Prompt and Negative Prompt (If needed)
-   - Click "Generate Image" to start the create images
-   - View the optimized prompt and generated images
-   - 1-click to copy the image to Video generation
-![alt text](assets/image3.png)
+## 📖 Usage Guide
 
-4. Video generation
-![alt text](assets/image4.png)
-   - Enter your prompt in the text box
-   - Optionally upload an image or 1-click copy from Image generation
-   - Click "Optimze Prompt" to start the create Optimized Prompt and Negative Prompt (If needed)
-   - Click "Generate Image" to start the create image
-   - View the optimized prompt and generated video
-   - You can compare the videos between original and optimized version
-![alt text](assets/image5.png)
+### 🖼️ Image Generation
 
-5. Long video generation
-   - Enter your prompt in the story box
-   - Click "Generate Shots" to create storyboard.
-   - Click "Generate Video" to generate a long video.   
-    It first creates images by scens, generate videos from every image of the scen, then concate the short videos to a long video, add caption to the video
-   ![alt text](assets/image7.png)
-   ![alt text](assets/image8.png)
-s
-## Notes
+#### Text-to-Image Mode
+1. Select "Text-to-Image" mode
+2. Enter your prompt or choose from templates
+3. Click "🔧 Optimize Prompt" for AI enhancement
+4. Click "🎨 Generate Image" to create
+5. Use "Copy to Video Gen" to transfer to video generation
 
-- The application uses Amazon Nova to optimize prompts for better video generation results
-- I found sometimes that `Nova Pro` works better for image optimzation while `Nova Lite` works better for video, so you can switch the model to try. 
-- Video generation may take several minutes to complete
-- Generated videos are temporarily stored in the `generated_videos` directory
-- Generated images are temporarily stored in the `generated_images` directory
-- Both English and Chinese prompts are supported, but optimized prompts will be in English
+#### Image-to-Image Outpainting Mode
+1. Select "Image-to-Image (Outpainting)" mode
+2. Upload your image
+3. **Get AI Suggestions**:
+   - Click "🎯 Suggest Mask Prompts" for targeting specific areas
+   - Click "🎨 Suggest Themes" for creative enhancement ideas
+   - Click "🚀 Get All Suggestions" for comprehensive analysis
+4. Use suggested prompts or write your own
+5. **Optional Resizing**:
+   - Enable "Enable Resize" checkbox
+   - Set target dimensions or use quick presets
+   - Preview canvas layout
+6. Generate your enhanced image
 
-## Example Prompts
+### 🎥 Video Generation
+1. Enter video prompt or copy from image generation
+2. Optionally upload an image for image-to-video
+3. Choose video model (Nova Reel or Luma Ray)
+4. Optimize prompt and generate video
+5. Compare results if comparison mode is enabled
 
-### Text to Image example:
+### 🎬 Long Video Generation
+1. Enter your story or concept
+2. Click "Generate Shots" to create storyboard
+3. Review and edit generated shots
+4. Click "Generate Video" for full pipeline:
+   - Shot image generation
+   - Video creation for each shot
+   - Video stitching and captioning
+
+## 🛠️ Configuration
+
+### Model Settings
+- **Optimization Model**: Choose between Nova Pro/Lite for prompt optimization
+- **Canvas Model**: Nova Canvas v1:0 for image generation
+- **Reel Model**: Nova Reel v1:0/v1:1 for video generation
+- **Analysis Model**: Claude Sonnet 4 for AI suggestions
+
+### S3 Configuration
+Update `config.py` with your S3 bucket:
+```python
+DEFAULT_BUCKET = "your-s3-bucket-name"
 ```
-海底漫游的视频
+
+### Advanced Settings
+- **CFG Scale**: Controls creativity vs adherence (1.0-10.0)
+- **Quality**: Standard vs Premium generation
+- **Aspect Ratios**: Multiple preset ratios available
+- **Seeds**: Reproducible generation with fixed seeds
+
+## 📁 Project Structure
+
 ```
+canvas_reel_optimizer/
+├── streamlit_app.py          # Main Streamlit application
+├── app.py                    # Legacy Gradio interface
+├── config.py                 # Configuration settings
+├── generation.py             # Core generation functions
+├── shot_video.py             # Long video generation logic
+├── utils.py                  # Utility functions
+├── requirements.txt          # Python dependencies
+├── README.md                 # This file
+├── assets/                   # Demo images and videos
+├── generated_images/         # Output directory for images
+├── generated_videos/         # Output directory for videos
+└── .gitignore               # Git ignore rules
 ```
-a video of walking in a underwater world
-```   
 
+## 🎯 Key Features Deep Dive
 
+### AI-Powered Suggestions
+The application uses Claude Sonnet 4 to analyze uploaded images and provide:
 
+**Mask Prompts**: Target specific areas
+- "background" - for background modifications
+- "person's clothing" - for clothing changes
+- "sky and clouds" - for atmospheric edits
+- "foreground objects" - for object manipulation
+
+**Creative Themes**: Enhancement ideas
+- "extend with serene mountain landscape"
+- "add warm golden hour lighting"
+- "transform to professional studio setting"
+- "enhance with artistic bokeh effects"
+
+### Intelligent Outpainting
+- **Canvas Creation**: Automatically positions original image
+- **Smart Masking**: Preserves original content, fills new areas
+- **Dimension Validation**: Ensures Nova Canvas compatibility
+- **Preview System**: Shows what areas will be AI-generated
+
+### Advanced Video Pipeline
+- **Multi-Model Support**: Nova Reel, Luma Ray integration
+- **Prompt Optimization**: AI-enhanced descriptions
+- **Error Recovery**: Handles generation failures gracefully
+- **Progress Tracking**: Real-time status updates
+
+## 🔧 Troubleshooting
+
+### Common Issues
+
+**"NovaCanvasResizer object has no attribute 'resize_image'"**
+- Click "Clear Resizer Cache" in Debug Options
+- Restart the Streamlit application
+
+**AWS Permissions Errors**
+- Verify Bedrock model access in your AWS account
+- Check S3 bucket permissions
+- Ensure correct AWS region configuration
+
+**Generation Failures**
+- Try lower CFG scale values (3.0-5.0)
+- Use "standard" quality for testing
+- Check image dimensions (320-2048 pixels)
+
+### Performance Tips
+- Use "standard" quality for faster testing
+- Enable comparison mode only when needed
+- Clear generated files periodically to save disk space
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🙏 Acknowledgments
+
+- **Amazon Nova**: Canvas and Reel models for image/video generation
+- **Claude Sonnet 4**: Advanced AI analysis and suggestions
+- **Streamlit**: Excellent web application framework
+- **AWS Bedrock**: Managed AI service platform
+
+## 📞 Support
+
+For issues and questions:
+- Open an issue on GitHub
+- Check the troubleshooting section
+- Review AWS Bedrock documentation for model-specific guidance
+
+---
+
+**Built with ❤️ using Amazon Nova, Claude Sonnet 4, and Streamlit**

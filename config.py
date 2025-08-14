@@ -262,8 +262,22 @@ Please break down the continuous shot into connected segments in JSON format:
 
 # Model configuration
 MODEL_OPTIONS = {
-    "Nova Lite": "us.amazon.nova-lite-v1:0",
-    "Nova Pro": "us.amazon.nova-pro-v1:0"
+    "Nova Lite": "amazon.nova-lite-v1:0",
+    "Nova Pro": "amazon.nova-pro-v1:0"
+}
+
+# Video generation models
+VIDEO_MODEL_OPTIONS = {
+    "Nova Reel v1.1": "amazon.nova-reel-v1:1",
+    "Nova Reel v1.0": "amazon.nova-reel-v1:0", 
+    "Luma Ray v2": "luma.ray-v2:0"
+}
+
+# Model regions
+MODEL_REGIONS = {
+    "amazon.nova-reel-v1:1": "us-east-1",
+    "amazon.nova-reel-v1:0": "us-east-1",
+    "luma.ray-v2:0": "us-west-2"
 }
 
 CANVAS_SIZE= [
@@ -297,17 +311,26 @@ CANVAS_SIZE= [
     "1824 x 2288 (4:5)"
                             ]
 # Default values
-DEFAULT_BUCKET = "s3://bedrock-video-generation-us-east-1-jlvyiv"
+DEFAULT_BUCKET = "s3://bedrock-data-automation-result-bucky"  # Using existing bucket in bucky-nctu account
+DEFAULT_BUCKET_WEST2 = "s3://bedrock-video-generation-us-west-2-0mqfxs"  # Using existing bucket in bucky-nctu account
 DEFAULT_GUIDELINE = "Amazon_Nova_Reel.pdf"
 GENERATED_VIDEOS_DIR = 'generated_videos'
-LITE_MODEL_ID = "us.amazon.nova-lite-v1:0"
-PRO_MODEL_ID = "us.amazon.nova-pro-v1:0"
+LITE_MODEL_ID = "amazon.nova-lite-v1:0"
+PRO_MODEL_ID = "amazon.nova-pro-v1:0"
 REEL_MODEL_ID = 'amazon.nova-reel-v1:1'
+RAY_MODEL_ID = 'luma.ray-v2:0'
+
+# Model-specific buckets
+MODEL_BUCKETS = {
+    "amazon.nova-reel-v1:1": DEFAULT_BUCKET,
+    "amazon.nova-reel-v1:0": DEFAULT_BUCKET,
+    "luma.ray-v2:0": DEFAULT_BUCKET_WEST2
+}
 
 # 预置的提示词模版
 PROMPT_SAMPLES = {
-    "风景模版": "一幅美丽的自然风景画，包含山脉和湖泊",
-    "建筑模版": "一座宏伟的古代城堡，背景是夕阳",
-    "亚马逊简单版": "我心目中的AWS像一个朋友，帮我在数字化转型的道路上披荆斩棘。",
-    "亚马逊复杂版": "在一片广袤的科技星空下，AWS如一柄闪耀着银色光芒的利剑静静悬浮。这把利剑的剑身流转着云计算的灵动数据流，剑锋锐利如同切割黎明的第一缕阳光。当我握住剑柄的那一刻，数字化转型的荆棘丛生之路顿时豁然开朗，如同劈开浓雾见晴天。利剑所指之处，道路两旁绽放出创新的繁花，照亮了业腾飞的征程，恰似黎明前升起的启明星指引着前行的方向。",
+    "風景模版": "一幅美麗的自然風景畫，包含山脈和湖泊",
+    "建築模版": "一座宏偉的古代城堡，背景是夕陽",
+    "Amazon 簡單版": "我心目中的AWS像一個朋友，幫我在數字化轉型的道路上披荊斬棘。",
+    "Amazon 複雜版": "在一片廣袤的科技星空下，AWS如一柄閃耀著銀色光芒的利劍靜靜懸浮。這把利劍的劍身流轉著雲計算的靈動數據流，劍鋒銳利如同切割黎明的第一縷陽光。當我握住劍柄的那一刻，數字化轉型的荊棘叢生之路頓時豁然開朗，如同劈開濃霧見晴天。利劍所指之處，道路兩旁綻放出創新的繁花，照亮了業騰飛的征程，恰似黎明前升起的啟明星指引著前行的方向。",
 }

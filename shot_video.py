@@ -375,9 +375,11 @@ def generate_shot_image(reel_gen:ReelGenerator,shots:dict,timestamp:str, seed:in
         save_path = os.path.join(output_dir, f'shot_{idx}.png')
         
         if idx == 0 and reference_path:  # First shot with reference image
-            # Use reference image to guide the first shot generation
-            print(f"Generating first shot using reference image: {reference_path}")
-            ret = reel_gen.generate_variations([reference_path],prompt,negative_prompt,save_path,seed,cfg_scale,similarity_strength)
+            # Use the reference image directly as the first frame
+            import shutil
+            shutil.copy2(reference_path, save_path)
+            print(f"Using reference image directly as shot 0: {save_path}")
+            ret = True  # Mark as successful
         elif not image_files:  # First image, no reference
             print(f"Generating first shot from text: {prompt[:50]}...")
             ret = reel_gen.generate_text2img(prompt,negative_prompt, save_path,seed,cfg_scale)
@@ -388,7 +390,7 @@ def generate_shot_image(reel_gen:ReelGenerator,shots:dict,timestamp:str, seed:in
         if ret:
             image_files.append(save_path)
             prompts.append(prompt)
-            print(f"Successfully generated shot {idx}: {save_path}")
+            print(f"Successfully processed shot {idx}: {save_path}")
         else:
             print(f"Failed to generate shot {idx}")
 

@@ -1376,21 +1376,21 @@ def main():
         )
         
         # Image upload for long video generation
-        st.subheader("📸 Optional: Upload Reference Image")
+        st.subheader("📸 Optional: Upload First Frame Image")
         long_video_uploaded_image = st.file_uploader(
-            "Upload an image to use as reference for the first shot (optional):",
+            "Upload an image to use as the first frame of your long video:",
             type=['png', 'jpg', 'jpeg'],
             key="long_video_image_upload",
-            help="Upload an image that will be used as a reference for generating the first shot of your long video. This helps maintain visual consistency."
+            help="Upload an image that will be used directly as the first frame. Subsequent frames will be generated to maintain visual consistency with this starting image."
         )
         
         # Display uploaded image
         if long_video_uploaded_image:
             col1, col2 = st.columns([1, 2])
             with col1:
-                st.image(long_video_uploaded_image, caption="Reference Image", use_column_width=True)
+                st.image(long_video_uploaded_image, caption="First Frame Image", use_column_width=True)
             with col2:
-                st.info("✅ Reference image uploaded! This will be used to guide the visual style of your long video generation.")
+                st.info("✅ First frame image uploaded! This will be used directly as the first frame of your long video, and subsequent frames will be generated to maintain visual consistency.")
         
         # Advanced settings
         with st.expander("⚙️ Advanced Settings"):
@@ -1464,13 +1464,13 @@ def main():
                                     reference_image = Image.open(BytesIO(image_bytes))
                                     if reference_image.mode != 'RGB':
                                         reference_image = reference_image.convert('RGB')
-                                    st.success(f"✅ Reference image processed: {reference_image.size}, mode: {reference_image.mode}")
-                                    st.info("🎨 First shot will be generated using your reference image as style guide")
+                                    st.success(f"✅ First frame image processed: {reference_image.size}, mode: {reference_image.mode}")
+                                    st.info("🎬 Your uploaded image will be used directly as the first frame of the long video")
                                 except Exception as e:
                                     st.error(f"Could not process reference image: {str(e)}")
                                     reference_image = None
                             else:
-                                st.info("📝 No reference image provided - generating shots from text prompts only")
+                                st.info("📝 No first frame image provided - all frames will be generated from text prompts")
                             
                             image_files = generate_shot_image(
                                 reel_gen, 

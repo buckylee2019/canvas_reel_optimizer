@@ -643,26 +643,25 @@ def display_video(video_path, label=""):
     if video_path and os.path.exists(video_path):
         st.video(video_path)
         
-        # Create columns for caption and download button
-        col1, col2 = st.columns([3, 1])
-        with col1:
+        # Display label and download button without nested columns
+        if label:
             st.caption(label)
-        with col2:
-            # Add download button
-            try:
-                with open(video_path, "rb") as file:
-                    video_bytes = file.read()
-                    # Get filename from path
-                    filename = os.path.basename(video_path)
-                    st.download_button(
-                        label="📥 Download",
-                        data=video_bytes,
-                        file_name=filename,
-                        mime="video/mp4",
-                        help=f"Download {label.lower() if label else 'video'}"
-                    )
-            except Exception as e:
-                st.error(f"Error preparing download: {str(e)}")
+        
+        # Add download button
+        try:
+            with open(video_path, "rb") as file:
+                video_bytes = file.read()
+                # Get filename from path
+                filename = os.path.basename(video_path)
+                st.download_button(
+                    label="📥 Download",
+                    data=video_bytes,
+                    file_name=filename,
+                    mime="video/mp4",
+                    help=f"Download {label.lower() if label else 'video'}"
+                )
+        except Exception as e:
+            st.error(f"Error preparing download: {str(e)}")
     return video_path
 
 def main():

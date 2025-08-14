@@ -1339,19 +1339,6 @@ def main():
         st.header("Long Video Generation")
         st.markdown("Generate longer videos by creating storyboards and stitching multiple scenes together.")
         
-        # Long video settings
-        with st.expander("⚙️ Long Video Settings"):
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                num_shots = st.slider("Number of Shots", 2, 8, 4)
-                shot_duration = st.slider("Duration per Shot (seconds)", 3, 10, 6)
-            with col2:
-                image_seed = st.number_input("Image Generation Seed", value=0, help="Random seed for image generation (-1 for random)")
-                cfg_scale = st.slider("CFG Scale", 1.0, 10.0, 7.0, 0.1, help="Controls how closely the image follows the prompt")
-            with col3:
-                similarity_strength = st.slider("Similarity Strength", 0.1, 1.0, 0.8, 0.1, help="Controls consistency between shots")
-                is_continuous = st.checkbox("Continuous Shot Mode", value=False, help="Generate shots with better continuity")
-        
         # Information about the process
         with st.expander("ℹ️ How Long Video Generation Works"):
             st.markdown("""
@@ -1387,6 +1374,36 @@ def main():
             help="Describe the overall story or concept for your long video. Be specific about characters, setting, and sequence of events.",
             placeholder="Example: A young astronaut discovers a mysterious alien artifact on Mars. The story begins with her exploring a vast red canyon, then finding a glowing crystal in a cave, followed by the crystal activating and showing visions of an ancient civilization, and finally her making contact with the alien intelligence."
         )
+        
+        # Image upload for long video generation
+        st.subheader("📸 Optional: Upload Reference Image")
+        long_video_uploaded_image = st.file_uploader(
+            "Upload an image to use as reference for the first shot (optional):",
+            type=['png', 'jpg', 'jpeg'],
+            key="long_video_image_upload",
+            help="Upload an image that will be used as a reference for generating the first shot of your long video. This helps maintain visual consistency."
+        )
+        
+        # Display uploaded image
+        if long_video_uploaded_image:
+            col1, col2 = st.columns([1, 2])
+            with col1:
+                st.image(long_video_uploaded_image, caption="Reference Image", use_column_width=True)
+            with col2:
+                st.info("✅ Reference image uploaded! This will be used to guide the visual style of your long video generation.")
+        
+        # Advanced settings
+        with st.expander("⚙️ Advanced Settings"):
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                num_shots = st.slider("Number of shots", 2, 8, 4, help="Number of individual shots to generate")
+                shot_duration = st.slider("Duration per Shot (seconds)", 3, 10, 6, help="Duration for each individual shot")
+            with col2:
+                image_seed = st.number_input("Image Generation Seed", value=0, help="Random seed for image generation (-1 for random)")
+                cfg_scale = st.slider("CFG Scale", 1.0, 10.0, 7.0, 0.1, help="Controls how closely the image follows the prompt")
+            with col3:
+                similarity_strength = st.slider("Similarity Strength", 0.1, 1.0, 0.8, 0.1, help="Controls consistency between shots")
+                is_continuous = st.checkbox("Continuous narrative", value=True, help="Maintain character and setting consistency across shots")
         
         # Generate buttons
         col1, col2 = st.columns(2)
@@ -1437,6 +1454,21 @@ def main():
                             st.info("Step 1/4: Generating images for each shot...")
                             progress_bar = st.progress(0)
                             
+                            # Prepare reference image if uploaded
+                            reference_image = None
+                            if long_video_uploaded_image:
+                                try:
+                                    # Reset file pointer and convert to PIL Image
+                                    long_video_uploaded_image.seek(0)
+                                    image_bytes = long_video_uploaded_image.read()
+                                    reference_image = Image.open(BytesIO(image_bytes))
+                                    if reference_image.mode != 'RGB':
+                                        reference_image = reference_image.convert('RGB')
+                                    st.info(f"✅ Using reference image: {reference_image.size}, mode: {reference_image.mode}")
+                                except Exception as e:
+                                    st.warning(f"Could not process reference image: {str(e)}")
+                                    reference_image = None
+                            
                             image_files = generate_shot_image(
                                 reel_gen, 
                                 shots, 
@@ -1444,7 +1476,8 @@ def main():
                                 seed=image_seed, 
                                 cfg_scale=cfg_scale, 
                                 similarity_strength=similarity_strength, 
-                                is_continues_shot=is_continuous
+                                is_continues_shot=is_continuous,
+                                reference_image=reference_image
                             )
                             progress_bar.progress(25)
                             st.success(f"Generated {len(image_files)} images!")

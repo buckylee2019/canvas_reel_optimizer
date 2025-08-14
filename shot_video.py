@@ -352,7 +352,7 @@ def generate_shots(reel_gen:ReelGenerator,story:str,num_shot:int=3,is_continues_
     shots = reel_gen.generate_shots(story, system.replace("<num_shot>",str(num_shot)))
     return shots
 
-def generate_shot_image(reel_gen:ReelGenerator,shots:dict,timestamp:str, seed:int=0,cfg_scale:float = 6.5, similarity_strength:float = 0.8, is_continues_shot = False):
+def generate_shot_image(reel_gen:ReelGenerator,shots:dict,timestamp:str, seed:int=0,cfg_scale:float = 6.5, similarity_strength:float = 0.8, is_continues_shot = False, reference_image=None):
     # Create directories for outputs
     # timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
     output_dir = os.path.join('shot_images', timestamp)
@@ -361,15 +361,26 @@ def generate_shot_image(reel_gen:ReelGenerator,shots:dict,timestamp:str, seed:in
     # Generate images for each shot
     image_files = []
     prompts = []
+    
+    # If reference image is provided, save it first
+    reference_path = None
+    if reference_image:
+        reference_path = os.path.join(output_dir, 'reference_image.png')
+        reference_image.save(reference_path)
+        print(f"Saved reference image to: {reference_path}")
+    
     for idx, shot in enumerate(shots['shots']):
         # optimize prompt for canvas
         prompt,negative_prompt = optimize_canvas_prompt(shot['caption'])
         save_path = os.path.join(output_dir, f'shot_{idx}.png')
         
-        if not image_files:  # First image
+        if not image_files and not reference_path:  # First image, no reference
             ret = reel_gen.generate_text2img(prompt,negative_prompt, save_path,seed,cfg_scale)
-        else:
+        elif not image_files and reference_path:  # First image, with reference
+            ret = reel_gen.generate_variations([reference_path],prompt,negative_prompt,save_path,seed,cfg_scale,similarity_strength)
+        else:  # Subsequent images, use previous images for consistency
             ret = reel_gen.generate_variations(image_files,prompt,negative_prompt,save_path,seed,cfg_scale,similarity_strength)
+            
         if ret:
             image_files.append(save_path)
             prompts.append(prompt)

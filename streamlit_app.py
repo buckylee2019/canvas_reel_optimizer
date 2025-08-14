@@ -647,18 +647,21 @@ def display_video(video_path, label=""):
         if label:
             st.caption(label)
         
-        # Add download button
+        # Add download button with unique key
         try:
             with open(video_path, "rb") as file:
                 video_bytes = file.read()
                 # Get filename from path
                 filename = os.path.basename(video_path)
+                # Create unique key based on filename and label
+                unique_key = f"download_{filename}_{label.replace(' ', '_').lower()}" if label else f"download_{filename}"
                 st.download_button(
                     label="📥 Download",
                     data=video_bytes,
                     file_name=filename,
                     mime="video/mp4",
-                    help=f"Download {label.lower() if label else 'video'}"
+                    help=f"Download {label.lower() if label else 'video'}",
+                    key=unique_key
                 )
         except Exception as e:
             st.error(f"Error preparing download: {str(e)}")

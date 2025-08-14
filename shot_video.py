@@ -17,14 +17,14 @@ from json import JSONDecodeError
 import sys
 import cv2
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from config import SHOT_SYSTEM,SYSTEM_TEXT_ONLY,SYSTEM_IMAGE_TEXT,DEFAULT_GUIDELINE,LITE_MODEL_ID,CONTINUOUS_SHOT_SYSTEM
+from config import SHOT_SYSTEM,SYSTEM_TEXT_ONLY,SYSTEM_IMAGE_TEXT,DEFAULT_GUIDELINE,LITE_MODEL_ID,REEL_MODEL_ID,CONTINUOUS_SHOT_SYSTEM,CANVAS_MODEL_ID
 from utils import random_string_name
 from generation import optimize_canvas_prompt
 
 
 
 class ReelGenerator:
-    def __init__(self,model_id = LITE_MODEL_ID,region='us-east-1', bucket_name='s3://bedrock-video-generation-us-east-1-jlvyiv'):
+    def __init__(self, canvas_model_id="amazon.nova-canvas-v1:0", reel_model_id=REEL_MODEL_ID, region='us-east-1', bucket_name='s3://bedrock-video-generation-us-east-1-jlvyiv'):
         """Initialize ReelGenerator with AWS credentials and configuration."""
         config = Config(
             connect_timeout=1000,
@@ -36,7 +36,15 @@ class ReelGenerator:
         self.s3_bucket =  path_parts[0]
         self.session = boto3.session.Session(region_name=region)
         self.bedrock_runtime = self.session.client(service_name='bedrock-runtime', config=config)
-        self.MODEL_ID =model_id
+        
+        # Store both model IDs
+        self.CANVAS_MODEL_ID = canvas_model_id  # For image/shot generation
+        self.REEL_MODEL_ID = reel_model_id      # For video generation
+        
+        print(f"ReelGenerator initialized:")
+        print(f"  Canvas Model (for images): {self.CANVAS_MODEL_ID}")
+        print(f"  Reel Model (for videos): {self.REEL_MODEL_ID}")
+        print(f"  S3 Bucket: {self.s3_bucket}")
 
     def _parse_json(self, pattern: str, text: str) -> str:
         """Parse text using regex pattern."""
@@ -98,9 +106,10 @@ class ReelGenerator:
         accept = "application/json"
         content_type = "application/json"
 
+        print(f"Generating image using Canvas model: {self.CANVAS_MODEL_ID}")
         response = self.bedrock_runtime.invoke_model(
             body=json.dumps(body),
-            modelId='amazon.nova-canvas-v1:0',
+            modelId=self.CANVAS_MODEL_ID,  # Use the configured canvas model
             accept=accept,
             contentType=content_type
         )
@@ -223,7 +232,7 @@ class ReelGenerator:
 
     def generate_video(self, text_prompt: str, ref_image: str = None,seed:int = 0) -> dict:
         """Generate video from text prompt and optional reference image."""
-        print(f"Generating video with model: {self.MODEL_ID}")
+        print(f"Generating video with Reel model: {self.REEL_MODEL_ID}")
         print(f"Using bucket: {self.s3_bucket}")
         print(f"Prompt: {text_prompt[:100]}...")
         
@@ -254,7 +263,7 @@ class ReelGenerator:
 
         try:
             invocation = self.bedrock_runtime.start_async_invoke(
-                modelId=self.MODEL_ID,  # Use the configured model ID instead of hardcoded
+                modelId=self.REEL_MODEL_ID,  # Use the configured reel model
                 modelInput=model_input,
                 outputDataConfig={
                     "s3OutputDataConfig": {

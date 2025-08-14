@@ -1415,7 +1415,8 @@ def main():
                         try:
                             # Create ReelGenerator instance
                             reel_gen = ReelGenerator(
-                                model_id=st.session_state.selected_model,
+                                canvas_model_id=st.session_state.canvas_model,  # Use canvas model for images
+                                reel_model_id=st.session_state.reel_model,      # Use reel model for videos
                                 region='us-east-1',
                                 bucket_name=st.session_state.bucket_name
                             )
@@ -1438,7 +1439,8 @@ def main():
                             # Create ReelGenerator instance if not exists
                             if 'reel_generator' not in st.session_state:
                                 st.session_state.reel_generator = ReelGenerator(
-                                    model_id=st.session_state.selected_model,
+                                    canvas_model_id=st.session_state.canvas_model,  # Use canvas model for images
+                                    reel_model_id=st.session_state.reel_model,      # Use reel model for videos
                                     region='us-east-1',
                                     bucket_name=st.session_state.bucket_name
                                 )

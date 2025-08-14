@@ -17,7 +17,7 @@ from json import JSONDecodeError
 import sys
 import cv2
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from config import SHOT_SYSTEM,SYSTEM_TEXT_ONLY,SYSTEM_IMAGE_TEXT,DEFAULT_GUIDELINE,LITE_MODEL_ID,REEL_MODEL_ID,CONTINUOUS_SHOT_SYSTEM,CANVAS_MODEL_ID
+from config import SHOT_SYSTEM,SYSTEM_TEXT_ONLY,SYSTEM_IMAGE_TEXT,DEFAULT_GUIDELINE,LITE_MODEL_ID,REEL_MODEL_ID,CONTINUOUS_SHOT_SYSTEM
 from utils import random_string_name
 from generation import optimize_canvas_prompt
 

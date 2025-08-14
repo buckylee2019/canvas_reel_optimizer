@@ -1417,6 +1417,7 @@ def main():
                             reel_gen = ReelGenerator(
                                 canvas_model_id=st.session_state.canvas_model,  # Use canvas model for images
                                 reel_model_id=st.session_state.reel_model,      # Use reel model for videos
+                                text_model_id=st.session_state.selected_model,  # Use selected model for text generation
                                 region='us-east-1',
                                 bucket_name=st.session_state.bucket_name
                             )
@@ -1441,6 +1442,7 @@ def main():
                                 st.session_state.reel_generator = ReelGenerator(
                                     canvas_model_id=st.session_state.canvas_model,  # Use canvas model for images
                                     reel_model_id=st.session_state.reel_model,      # Use reel model for videos
+                                    text_model_id=st.session_state.selected_model,  # Use selected model for text generation
                                     region='us-east-1',
                                     bucket_name=st.session_state.bucket_name
                                 )

@@ -17,14 +17,14 @@ from json import JSONDecodeError
 import sys
 import cv2
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from config import SHOT_SYSTEM,SYSTEM_TEXT_ONLY,SYSTEM_IMAGE_TEXT,DEFAULT_GUIDELINE,LITE_MODEL_ID,REEL_MODEL_ID,CONTINUOUS_SHOT_SYSTEM
+from config import SHOT_SYSTEM,SYSTEM_TEXT_ONLY,SYSTEM_IMAGE_TEXT,DEFAULT_GUIDELINE,LITE_MODEL_ID,REEL_MODEL_ID,PRO_MODEL_ID,CONTINUOUS_SHOT_SYSTEM
 from utils import random_string_name
 from generation import optimize_canvas_prompt
 
 
 
 class ReelGenerator:
-    def __init__(self, canvas_model_id="amazon.nova-canvas-v1:0", reel_model_id=REEL_MODEL_ID, region='us-east-1', bucket_name='s3://bedrock-video-generation-us-east-1-jlvyiv'):
+    def __init__(self, canvas_model_id="amazon.nova-canvas-v1:0", reel_model_id=REEL_MODEL_ID, text_model_id=PRO_MODEL_ID, region='us-east-1', bucket_name='s3://bedrock-video-generation-us-east-1-jlvyiv'):
         """Initialize ReelGenerator with AWS credentials and configuration."""
         config = Config(
             connect_timeout=1000,
@@ -37,13 +37,15 @@ class ReelGenerator:
         self.session = boto3.session.Session(region_name=region)
         self.bedrock_runtime = self.session.client(service_name='bedrock-runtime', config=config)
         
-        # Store both model IDs
+        # Store all model IDs
         self.CANVAS_MODEL_ID = canvas_model_id  # For image/shot generation
         self.REEL_MODEL_ID = reel_model_id      # For video generation
+        self.TEXT_MODEL_ID = text_model_id      # For text generation (shots, prompts)
         
         print(f"ReelGenerator initialized:")
         print(f"  Canvas Model (for images): {self.CANVAS_MODEL_ID}")
         print(f"  Reel Model (for videos): {self.REEL_MODEL_ID}")
+        print(f"  Text Model (for shots/prompts): {self.TEXT_MODEL_ID}")
         print(f"  S3 Bucket: {self.s3_bucket}")
 
     def _parse_json(self, pattern: str, text: str) -> str:
@@ -86,7 +88,7 @@ class ReelGenerator:
         ]
 
         response = self.bedrock_runtime.converse_stream(
-            modelId=self.MODEL_ID,
+            modelId=self.TEXT_MODEL_ID,  # Use text model for shot generation
             messages=messages,
             system=system,
             inferenceConfig={"maxTokens": 2000, "topP": 0.9, "temperature": 0.8}

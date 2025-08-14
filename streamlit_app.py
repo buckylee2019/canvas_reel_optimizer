@@ -348,10 +348,12 @@ def analyze_image_with_claude(image_input, analysis_type="both"):
             - Clothing or accessories
             - Specific regions (sky, ground, walls, etc.)
             
-            Format your response as a simple list:
-            • suggestion 1
-            • suggestion 2
-            • etc."""
+            Return only the mask prompt words/phrases that the image model should understand, one per line:
+            background
+            clothing
+            sky
+            person
+            etc."""
             
         elif analysis_type == "theme":
             prompt = """Analyze this image and suggest creative themes and prompts for outpainting/extending this image.
@@ -363,21 +365,22 @@ def analyze_image_with_claude(image_input, analysis_type="both"):
             - Environmental additions
             - Lighting enhancements
             
-            Format your response as a simple list:
-            • suggestion 1
-            • suggestion 2
-            • etc."""
+            Return creative outpainting prompts, one per line:
+            extend with serene mountain landscape
+            add warm golden hour lighting
+            transform to professional studio setting
+            etc."""
             
         else:  # both
             prompt = """Analyze this image and provide suggestions for both mask prompts and creative themes for outpainting.
             
-            **MASK PROMPTS** (for targeting specific areas):
-            Suggest 3-4 mask prompts for targeting specific parts of this image:
+            MASK PROMPTS (for targeting specific areas):
+            Suggest 3-4 mask prompts for targeting specific parts of this image. Return simple words/phrases the image model can understand:
             
-            **CREATIVE THEMES** (for outpainting/extending):
-            Suggest 4-5 creative outpainting themes to enhance or extend this image:
+            CREATIVE THEMES (for outpainting/extending):
+            Suggest 4-5 creative outpainting themes to enhance or extend this image. Return complete prompt phrases:
             
-            Keep suggestions concise and practical."""
+            Keep suggestions concise and practical. No bullet points or markdown formatting."""
         
         # Prepare the request
         request_body = {
@@ -444,8 +447,10 @@ def parse_suggestions(suggestions_text, suggestion_type):
                 current_section = "mask"
             elif "CREATIVE THEMES" in line.upper() or "THEMES" in line.upper():
                 current_section = "theme"
-            elif line.startswith('•') or line.startswith('-') or line.startswith('*'):
-                suggestion = line[1:].strip()
+            elif line and not line.startswith(('Suggest', 'Return', 'Keep', 'No ')):
+                # Skip instruction lines, process actual suggestions
+                # Remove any bullet points or formatting
+                suggestion = line.lstrip('•-*').strip()
                 if current_section == "mask" and suggestion:
                     mask_prompts.append(suggestion)
                 elif current_section == "theme" and suggestion:
@@ -458,8 +463,10 @@ def parse_suggestions(suggestions_text, suggestion_type):
         suggestions = []
         for line in lines:
             line = line.strip()
-            if line.startswith('•') or line.startswith('-') or line.startswith('*'):
-                suggestion = line[1:].strip()
+            # Skip instruction lines and empty lines
+            if line and not line.startswith(('Provide', 'Return', 'Focus', 'Consider', 'Format', 'Keep')):
+                # Remove any bullet points or formatting
+                suggestion = line.lstrip('•-*').strip()
                 if suggestion:
                     suggestions.append(suggestion)
         

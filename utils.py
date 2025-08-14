@@ -78,7 +78,7 @@ def process_image(image):
 def download_video(s3_uri,output_dir):
     """Download video from S3 to local storage"""
     try:
-        session = boto3.Session(profile_name='bucky-nctu', region_name=aws_region_s3)
+        session = boto3.Session(region_name=aws_region_s3)
         s3_client = session.client('s3')
         
         if not s3_uri.startswith('s3://'):
@@ -101,7 +101,7 @@ def download_video(s3_uri,output_dir):
         return None
 
 def upload_to_s3(local_file, bucket, s3_file):
-    session = boto3.Session(profile_name='bucky-nctu', region_name=aws_region_s3)
+    session = boto3.Session(region_name=aws_region_s3)
     s3 = session.client('s3')
     try:
         s3.upload_file(local_file, bucket, s3_file)
@@ -115,7 +115,7 @@ def upload_to_s3(local_file, bucket, s3_file):
         return False
     
 def generate_s3_url(bucket, s3_file):
-    session = boto3.Session(profile_name='bucky-nctu', region_name=aws_region_s3)
+    session = boto3.Session(region_name=aws_region_s3)
     s3 = session.client('s3')
     url = s3.generate_presigned_url('get_object',
                                     Params={'Bucket': bucket, 'Key': s3_file},

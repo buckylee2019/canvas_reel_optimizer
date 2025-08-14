@@ -1,0 +1,53 @@
+# Ignore test files
+test.py
+test_*.py
+*_test.py
+
+# Ignore development files
+.env
+.env.local
+.env.development
+.env.test
+
+# Ignore cache and temporary files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+.coverage
+.pytest_cache/
+
+# Ignore IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Ignore OS files
+.DS_Store
+Thumbs.db
+
+# Ignore git
+.git/
+.gitignore
+
+# Ignore documentation
+README.md
+CHANGELOG.md
+CONTRIBUTING.md
+docs/
+
+# Ignore deployment files (keep only what's needed)
+deploy-ecs.sh
+cloudformation-*.yaml
+
+# Ignore generated content
+generated_images/
+generated_videos/
+assets/
+
+# Ignore logs
+*.log
+logs/

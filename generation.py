@@ -31,8 +31,8 @@ from utils import (
     download_video
 )
 
-# Initialize AWS clients with bucky-nctu profile
-session = boto3.session.Session(profile_name='bucky-nctu', region_name='us-east-1')
+# Initialize AWS clients with default credentials (uses IAM roles in ECS)
+session = boto3.session.Session(region_name='us-east-1')
 client = session.client(service_name='bedrock-runtime', 
                        config=Config(connect_timeout=600, read_timeout=600))
 bedrock_runtime = session.client("bedrock-runtime")
@@ -184,14 +184,8 @@ def generate_image_pair(original_prompt, optimized_prompt, negative_prompt="", q
         original_images = future_original.result()
         optimized_images = future_optimized.result()
         
-        # Combine results
-        all_images = []
-        if original_images:
-            all_images.extend(original_images)
-        if optimized_images:
-            all_images.extend(optimized_images)
-            
-        return all_images
+        # Return the individual results (now single paths when num_images=1)
+        return original_images, optimized_images
 
 def generate_single_image(prompt, negative_prompt="", quality="standard", num_images=1, height=720, width=1280, seed=0, cfg_scale=6.5):
     """Generate image using Nova Canvas model"""
@@ -237,7 +231,11 @@ def generate_single_image(prompt, negative_prompt="", quality="standard", num_im
             image.save(path)
             image_paths.append(path)
         
-        return image_paths if image_paths else None
+        # Return single path if only one image requested, otherwise return list
+        if num_images == 1 and image_paths:
+            return image_paths[0]
+        else:
+            return image_paths if image_paths else None
         
     except Exception as e:
         print(f"Error generating image: {str(e)}")
@@ -373,8 +371,8 @@ def generate_video_with_model(prompt, bucket, model_id, image=None, seed=0, dura
     region = MODEL_REGIONS.get(model_id, "us-east-1")
     print(f"Using region: {region}")
     
-    # Create region-specific bedrock client with bucky-nctu profile
-    session_regional = boto3.Session(profile_name='bucky-nctu', region_name=region)
+    # Create region-specific bedrock client with default credentials
+    session_regional = boto3.Session(region_name=region)
     bedrock_runtime_regional = session_regional.client(
         'bedrock-runtime',
         config=Config(

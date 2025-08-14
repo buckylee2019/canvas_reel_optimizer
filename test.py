@@ -1,8 +1,8 @@
 import json
 import boto3
 
-# Create the Bedrock Runtime client.
-bedrock_runtime = boto3.client("bedrock-runtime", profile_name='bucky-nctu')
+# Create the Bedrock Runtime client using default credentials (IAM roles in ECS)
+bedrock_runtime = boto3.client("bedrock-runtime", region_name="us-east-1")
 
 model_input = {
     "taskType": "TEXT_VIDEO",

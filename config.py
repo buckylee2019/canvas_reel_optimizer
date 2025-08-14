@@ -311,8 +311,8 @@ CANVAS_SIZE= [
     "1824 x 2288 (4:5)"
                             ]
 # Default values
-DEFAULT_BUCKET = "s3://bedrock-data-automation-result-bucky"  # Using existing bucket in bucky-nctu account
-DEFAULT_BUCKET_WEST2 = "s3://bedrock-video-generation-us-west-2-0mqfxs"  # Using existing bucket in bucky-nctu account
+DEFAULT_BUCKET = "s3://canvas-reel-optimizer-bucket-224425919845"  # Using bucket in deployment account
+DEFAULT_BUCKET_WEST2 = "s3://canvas-reel-optimizer-west2-224425919845"  # Ray model bucket in us-west-2
 DEFAULT_GUIDELINE = "Amazon_Nova_Reel.pdf"
 GENERATED_VIDEOS_DIR = 'generated_videos'
 LITE_MODEL_ID = "amazon.nova-lite-v1:0"

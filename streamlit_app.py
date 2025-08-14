@@ -597,6 +597,19 @@ def display_image_with_copy_button(image_input, label=""):
                         st.session_state.copied_image = image_input
                         st.success("Image copied!")
                 return image_input
+        elif isinstance(image_input, list):
+            # It's a list of file paths - use the first one
+            if image_input and len(image_input) > 0:
+                first_image = image_input[0]
+                if isinstance(first_image, str) and os.path.exists(first_image):
+                    col1, col2 = st.columns([3, 1])
+                    with col1:
+                        st.image(first_image, caption=label, use_column_width=True)
+                    with col2:
+                        if st.button(f"Copy to Video Gen", key=f"copy_{label}"):
+                            st.session_state.copied_image = first_image
+                            st.success("Image copied!")
+                    return first_image
         elif hasattr(image_input, 'save'):
             # It's a PIL Image object
             col1, col2 = st.columns([3, 1])
@@ -632,13 +645,6 @@ def main():
     # Sidebar for configuration
     with st.sidebar:
         st.header("Configuration")
-        
-        # S3 Bucket
-        st.session_state.bucket_name = st.text_input(
-            "S3 Bucket Name", 
-            value=st.session_state.bucket_name,
-            help="S3 bucket for video output"
-        )
         
         # Model Selection
         model_display_names = list(MODEL_OPTIONS.keys())
@@ -747,57 +753,86 @@ def main():
                                 del st.session_state.selected_theme
                             st.rerun()
                     
-                    if 'mask_suggestions' in st.session_state:
-                        st.markdown("#### 🎯 Mask Prompt Suggestions")
-                        mask_suggestions = st.session_state.mask_suggestions.get("masks", [])
-                        if mask_suggestions:
-                            for i, suggestion in enumerate(mask_suggestions):
-                                col_mask1, col_mask2 = st.columns([4, 1])
-                                with col_mask1:
-                                    # Highlight selected suggestion
-                                    if st.session_state.get('selected_mask_prompt') == suggestion:
-                                        st.success(f"✓ {suggestion}")
-                                    else:
-                                        st.write(f"• {suggestion}")
-                                with col_mask2:
-                                    if st.button("Use", key=f"use_mask_{i}", help="Use this mask prompt"):
-                                        st.session_state.selected_mask_prompt = suggestion
-                                        st.success("Mask prompt selected!")
-                                        st.rerun()
-                        else:
-                            st.info("No mask suggestions available")
+                    # Display suggestions in dropdown format
+                    col_mask_dropdown, col_theme_dropdown = st.columns(2)
                     
-                    if 'theme_suggestions' in st.session_state:
-                        st.markdown("#### 🎨 Theme Suggestions")
-                        theme_suggestions = st.session_state.theme_suggestions.get("themes", [])
-                        if theme_suggestions:
-                            for i, suggestion in enumerate(theme_suggestions):
-                                col_theme1, col_theme2 = st.columns([4, 1])
-                                with col_theme1:
-                                    # Highlight selected suggestion
-                                    if st.session_state.get('selected_theme') == suggestion:
-                                        st.success(f"✓ {suggestion}")
-                                    else:
-                                        st.write(f"• {suggestion}")
-                                with col_theme2:
-                                    if st.button("Use", key=f"use_theme_{i}", help="Use this theme as prompt"):
-                                        st.session_state.selected_theme = suggestion
-                                        st.success("Theme selected!")
-                                        st.rerun()
-                        else:
-                            st.info("No theme suggestions available")
-        
-        # Prompt templates
-        template_options = ["Custom"] + list(PROMPT_SAMPLES.keys())
-        selected_template = st.selectbox("Choose a template:", template_options)
-        
-        if selected_template != "Custom":
-            default_prompt = PROMPT_SAMPLES[selected_template]
-        else:
-            default_prompt = ""
+                    with col_mask_dropdown:
+                        if 'mask_suggestions' in st.session_state:
+                            st.markdown("#### 🎯 Mask Prompt Suggestions")
+                            mask_suggestions = st.session_state.mask_suggestions.get("masks", [])
+                            if mask_suggestions:
+                                # Add "None" option at the beginning
+                                mask_options = ["None (don't use mask prompt)"] + mask_suggestions
+                                
+                                # Get current selection index
+                                current_mask = st.session_state.get('selected_mask_prompt', '')
+                                if current_mask and current_mask in mask_suggestions:
+                                    default_index = mask_suggestions.index(current_mask) + 1
+                                else:
+                                    default_index = 0
+                                
+                                selected_mask_option = st.selectbox(
+                                    "Select mask prompt:",
+                                    options=mask_options,
+                                    index=default_index,
+                                    key="mask_dropdown",
+                                    help="Choose a mask prompt to target specific areas"
+                                )
+                                
+                                # Update session state based on selection
+                                if selected_mask_option == "None (don't use mask prompt)":
+                                    if 'selected_mask_prompt' in st.session_state:
+                                        del st.session_state.selected_mask_prompt
+                                else:
+                                    st.session_state.selected_mask_prompt = selected_mask_option
+                                    st.success(f"✓ Selected: {selected_mask_option}")
+                            else:
+                                st.info("No mask suggestions available")
+                    
+                    with col_theme_dropdown:
+                        if 'theme_suggestions' in st.session_state:
+                            st.markdown("#### 🎨 Theme Suggestions")
+                            theme_suggestions = st.session_state.theme_suggestions.get("themes", [])
+                            if theme_suggestions:
+                                # Add "None" option at the beginning
+                                theme_options = ["None (don't use theme)"] + theme_suggestions
+                                
+                                # Get current selection index
+                                current_theme = st.session_state.get('selected_theme', '')
+                                if current_theme and current_theme in theme_suggestions:
+                                    default_index = theme_suggestions.index(current_theme) + 1
+                                else:
+                                    default_index = 0
+                                
+                                selected_theme_option = st.selectbox(
+                                    "Select theme:",
+                                    options=theme_options,
+                                    index=default_index,
+                                    key="theme_dropdown",
+                                    help="Choose a theme for creative outpainting"
+                                )
+                                
+                                # Update session state based on selection
+                                if selected_theme_option == "None (don't use theme)":
+                                    if 'selected_theme' in st.session_state:
+                                        del st.session_state.selected_theme
+                                else:
+                                    st.session_state.selected_theme = selected_theme_option
+                                    st.success(f"✓ Selected: {selected_theme_option}")
+                            else:
+                                st.info("No theme suggestions available")
         
         # Input prompt - different labels based on mode
         if generation_mode == "Text-to-Image":
+            # Prompt templates (only for text-to-image)
+            template_options = ["Custom"] + list(PROMPT_SAMPLES.keys())
+            selected_template = st.selectbox("Choose a template:", template_options)
+            
+            if selected_template != "Custom":
+                default_prompt = PROMPT_SAMPLES[selected_template]
+            else:
+                default_prompt = ""
+            
             prompt_label = "Enter your prompt:"
             prompt_help = "Describe what you want to generate"
             default_prompt_value = default_prompt
@@ -805,7 +840,12 @@ def main():
             prompt_label = "Enter your outpainting prompt:"
             prompt_help = "Describe what you want to add, change, or extend in the image"
             # Use selected theme if available
-            default_prompt_value = st.session_state.get('selected_theme', default_prompt)
+            selected_theme = st.session_state.get('selected_theme', '')
+            if selected_theme:
+                default_prompt_value = selected_theme
+                st.info(f"🎨 Using selected theme: {selected_theme}")
+            else:
+                default_prompt_value = ""
         
         canvas_prompt = st.text_area(
             prompt_label,
@@ -820,82 +860,73 @@ def main():
         target_height = None
         
         if generation_mode == "Image-to-Image (Outpainting)":
-            # Debug section
+            
+            # Use selected mask prompt if available
+            selected_mask = st.session_state.get('selected_mask_prompt', "")
+            if selected_mask:
+                st.info(f"🎯 Using selected mask prompt: {selected_mask}")
+            
+            mask_prompt = st.text_input(
+                "Mask Prompt (optional):",
+                value=selected_mask,
+                help="Specify which part of the image to focus on (e.g., 'background', 'clothing', 'sky')"
+            )
+            
+            # Resize options for outpainting (in expandable section)
+            with st.expander("🔧 Resize Options (Optional)", expanded=False):
+                st.markdown("**Resize the image to different dimensions while outpainting**")
+                resize_enabled = st.checkbox("Enable Resize", help="Resize the image to different dimensions while outpainting")
+                
+                if resize_enabled and uploaded_image:
+                    original_img = Image.open(uploaded_image)
+                    orig_width, orig_height = original_img.size
+                    
+                    col_resize1, col_resize2, col_resize3 = st.columns([1, 1, 1])
+                    
+                    with col_resize1:
+                        target_width = st.number_input(
+                            "Target Width",
+                            min_value=320,
+                            max_value=2048,
+                            value=orig_width,
+                            step=1,
+                            help="New width in pixels (minimum 320)"
+                        )
+                    
+                    with col_resize2:
+                        target_height = st.number_input(
+                            "Target Height", 
+                            min_value=320,
+                            max_value=2048,
+                            value=orig_height,
+                            step=1,
+                            help="New height in pixels (minimum 320)"
+                        )
+                    
+                    with col_resize3:
+                        pass  # Quick presets removed
+                    
+                    # Show what will change
+                    if target_width != orig_width or target_height != orig_height:
+                        st.info(f"**Original:** {orig_width}×{orig_height} → **Target:** {target_width}×{target_height}")
+                        width_diff = target_width - orig_width
+                        height_diff = target_height - orig_height
+                        if width_diff > 0 or height_diff > 0:
+                            st.warning(f"**AI will fill:** {max(0, width_diff)} pixels width, {max(0, height_diff)} pixels height")
+                    
+                    # Preview what the canvas will look like
+                    if st.checkbox("Show Canvas Preview", help="Preview how the image will be positioned"):
+                        resizer = get_nova_resizer()
+                        canvas_preview, _ = resizer._create_canvas_and_mask(original_img, (target_width, target_height))
+                        st.image(canvas_preview, caption=f"Canvas Preview: {target_width}×{target_height}", width=400)
+                else:
+                    # Initialize variables when resize is not enabled
+                    target_width = None
+                    target_height = None
             with st.expander("🔧 Debug Options"):
                 if st.button("Clear Resizer Cache", help="Clear cached resizer instance if having issues"):
                     clear_resizer_cache()
                     st.success("Cache cleared! Try generating again.")
-            
-            # Use selected mask prompt if available
-            default_mask_value = st.session_state.get('selected_mask_prompt', "")
-            mask_prompt = st.text_input(
-                "Mask Prompt (optional):",
-                value=default_mask_value,
-                help="Specify which part of the image to focus on (e.g., 'background', 'clothing', 'sky')"
-            )
-            
-            # Resize options for outpainting
-            st.subheader("Resize Options (Optional)")
-            resize_enabled = st.checkbox("Enable Resize", help="Resize the image to different dimensions while outpainting")
-            
-            if resize_enabled and uploaded_image:
-                original_img = Image.open(uploaded_image)
-                orig_width, orig_height = original_img.size
-                
-                col_resize1, col_resize2, col_resize3 = st.columns([1, 1, 1])
-                
-                with col_resize1:
-                    target_width = st.number_input(
-                        "Target Width",
-                        min_value=320,
-                        max_value=2048,
-                        value=orig_width,
-                        step=1,
-                        help="New width in pixels (minimum 320)"
-                    )
-                
-                with col_resize2:
-                    target_height = st.number_input(
-                        "Target Height", 
-                        min_value=320,
-                        max_value=2048,
-                        value=orig_height,
-                        step=1,
-                        help="New height in pixels (minimum 320)"
-                    )
-                
-                with col_resize3:
-                    st.markdown("**Quick Presets:**")
-                    if st.button("Square", help="Make image square using larger dimension", key="outpaint_square"):
-                        max_dim = max(orig_width, orig_height)
-                        target_width = max_dim
-                        target_height = max_dim
-                        st.rerun()
-                    
-                    if st.button("Double Width", help="Keep height, double width", key="outpaint_double_width"):
-                        target_width = orig_width * 2
-                        target_height = orig_height
-                        st.rerun()
-                    
-                    if st.button("Double Height", help="Keep width, double height", key="outpaint_double_height"):
-                        target_width = orig_width
-                        target_height = orig_height * 2
-                        st.rerun()
-                
-                # Show what will change
-                if target_width != orig_width or target_height != orig_height:
-                    st.info(f"**Original:** {orig_width}×{orig_height} → **Target:** {target_width}×{target_height}")
-                    width_diff = target_width - orig_width
-                    height_diff = target_height - orig_height
-                    if width_diff > 0 or height_diff > 0:
-                        st.warning(f"**AI will fill:** {max(0, width_diff)} pixels width, {max(0, height_diff)} pixels height")
-                
-                # Preview what the canvas will look like
-                if st.checkbox("Show Canvas Preview", help="Preview how the image will be positioned"):
-                    resizer = get_nova_resizer()
-                    canvas_preview, _ = resizer._create_canvas_and_mask(original_img, (target_width, target_height))
-                    st.image(canvas_preview, caption=f"Canvas Preview: {target_width}×{target_height}", width=400)
-        
         # Canvas settings
         col1, col2, col3, col4 = st.columns(4)
         with col1:
@@ -938,7 +969,7 @@ def main():
                     st.warning("Please enter a prompt first")
         
         with col2:
-            generate_button_text = "🎨 Generate Image" if generation_mode == "Text-to-Image" else "🖌️ Outpaint Image"
+            generate_button_text = "🎨 Generate Image"  # Same text for both modes
             if st.button(generate_button_text, key="generate_canvas"):
                 if canvas_prompt:
                     if generation_mode == "Image-to-Image (Outpainting)" and not uploaded_image:

@@ -34,7 +34,7 @@ class ReelGenerator:
             raise ValueError("Invalid S3 URI format")
         path_parts = bucket_name[5:].split('/', 1)
         self.s3_bucket =  path_parts[0]
-        self.session = boto3.session.Session(profile_name='bucky-nctu', region_name=region)
+        self.session = boto3.session.Session(region_name=region)
         self.bedrock_runtime = self.session.client(service_name='bedrock-runtime', config=config)
         self.MODEL_ID =model_id
 

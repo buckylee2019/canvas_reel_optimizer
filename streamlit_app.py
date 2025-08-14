@@ -1456,6 +1456,7 @@ def main():
                             
                             # Prepare reference image if uploaded
                             reference_image = None
+                            reference_path = None
                             if long_video_uploaded_image:
                                 try:
                                     # Reset file pointer and convert to PIL Image
@@ -1464,11 +1465,19 @@ def main():
                                     reference_image = Image.open(BytesIO(image_bytes))
                                     if reference_image.mode != 'RGB':
                                         reference_image = reference_image.convert('RGB')
+                                    
+                                    # Save reference image to shot_images directory
+                                    output_dir = os.path.join('shot_images', timestamp)
+                                    os.makedirs(output_dir, exist_ok=True)
+                                    reference_path = os.path.join(output_dir, 'shot_0.png')
+                                    reference_image.save(reference_path)
+                                    
                                     st.success(f"✅ First frame image processed: {reference_image.size}, mode: {reference_image.mode}")
                                     st.info("🎬 Your uploaded image will be used directly as the first frame of the long video")
                                 except Exception as e:
                                     st.error(f"Could not process reference image: {str(e)}")
                                     reference_image = None
+                                    reference_path = None
                             else:
                                 st.info("📝 No first frame image provided - all frames will be generated from text prompts")
                             
@@ -1481,6 +1490,17 @@ def main():
                                 similarity_strength=similarity_strength, 
                                 is_continues_shot=is_continuous
                             )
+                            
+                            # If we had a reference image, replace the first generated image with it
+                            if reference_path and os.path.exists(reference_path):
+                                if image_files and len(image_files) > 0:
+                                    # Replace first image with reference image
+                                    image_files[0] = reference_path
+                                    st.info("🎬 First frame replaced with your uploaded image")
+                                elif not image_files:
+                                    # No images were generated, add reference as first image
+                                    image_files = [reference_path]
+                                    st.info("🎬 Using your uploaded image as the only frame")
                             progress_bar.progress(25)
                             st.success(f"Generated {len(image_files)} images!")
                             

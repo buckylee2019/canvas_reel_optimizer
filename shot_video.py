@@ -37,6 +37,7 @@ class ReelGenerator:
         self.session = boto3.session.Session(region_name=region)
         self.bedrock_runtime = self.session.client(service_name='bedrock-runtime', config=config)
         self.MODEL_ID =model_id
+        print(f"Bucket Name: {self.s3_bucket}, region:{region}")
 
     def _parse_json(self, pattern: str, text: str) -> str:
         """Parse text using regex pattern."""
@@ -249,7 +250,7 @@ class ReelGenerator:
 
         try:
             invocation = self.bedrock_runtime.start_async_invoke(
-                modelId="amazon.nova-reel-v1:0",
+                modelId="amazon.nova-reel-v1:1",
                 modelInput=model_input,
                 outputDataConfig={
                     "s3OutputDataConfig": {

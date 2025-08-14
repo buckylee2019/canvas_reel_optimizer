@@ -18,7 +18,7 @@ import sys
 import cv2
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from config import SHOT_SYSTEM,SYSTEM_TEXT_ONLY,SYSTEM_IMAGE_TEXT,DEFAULT_GUIDELINE,LITE_MODEL_ID,CONTINUOUS_SHOT_SYSTEM
-from utils import random_string_name
+from utils import random_string_name, process_image
 from generation import optimize_canvas_prompt
 
 
@@ -344,7 +344,7 @@ class ReelGenerator:
             
             # Write output
             print(f"         💾 Writing output video...")
-            final_clip.write_videofile(output_path, verbose=False, logger=None)
+            final_clip.write_videofile(output_path)
             
             # Cleanup
             print(f"         🧹 Cleaning up clips...")
@@ -416,12 +416,12 @@ def generate_shot_image(reel_gen:ReelGenerator,shots:dict,timestamp:str, seed:in
             from PIL import Image
             ref_img = Image.open(reference_shot_path)
             # Check if it's your screenshot size (1374, 912) or similar user upload
-            if ref_img.size == (1374, 912) or ref_img.size[0] > 1000:
-                print(f"✅ Found valid reference image at {reference_shot_path}: {ref_img.size}")
-                print(f"🎬 Will use reference image as first shot")
-            else:
-                print(f"⚠️  Found image at {reference_shot_path} but size {ref_img.size} seems too small for reference")
-                has_reference_image = False
+            ref_img = process_image(ref_img)
+            img_byte_arr = io.BytesIO()
+            ref_img.save(img_byte_arr, format='JPEG')  # Use JPEG for Luma Ray
+            img_bytes = img_byte_arr.getvalue()
+            with open(reference_shot_path, 'wb') as f:
+                f.write(img_bytes)
         except Exception as e:
             print(f"❌ Error checking reference image: {str(e)}")
             has_reference_image = False
@@ -484,7 +484,10 @@ def generate_reel_prompts(reel_gen:ReelGenerator, shots:dict,image_files:list, s
 def generate_shot_vidoes(reel_gen:ReelGenerator,image_files:list,reel_prompts:list):        
     # Generate videos
     invocation_arns = []
+    print(f"Reel Prompts")
+
     for prompt, image_file in zip(reel_prompts, image_files):
+        print(f"Reel Prompts:{prompt}, image_file:{image_file}")
         invocation = reel_gen.generate_video(prompt, image_file)
         if invocation:
             invocation_arns.append(invocation['invocationArn'])

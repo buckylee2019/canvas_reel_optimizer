@@ -1415,9 +1415,7 @@ def main():
                         try:
                             # Create ReelGenerator instance
                             reel_gen = ReelGenerator(
-                                canvas_model_id=st.session_state.canvas_model,  # Use canvas model for images
-                                reel_model_id=st.session_state.reel_model,      # Use reel model for videos
-                                text_model_id=st.session_state.selected_model,  # Use selected model for text generation
+                                model_id=st.session_state.selected_model,  # Use selected model for text generation
                                 region='us-east-1',
                                 bucket_name=st.session_state.bucket_name
                             )
@@ -1440,9 +1438,7 @@ def main():
                             # Create ReelGenerator instance if not exists
                             if 'reel_generator' not in st.session_state:
                                 st.session_state.reel_generator = ReelGenerator(
-                                    canvas_model_id=st.session_state.canvas_model,  # Use canvas model for images
-                                    reel_model_id=st.session_state.reel_model,      # Use reel model for videos
-                                    text_model_id=st.session_state.selected_model,  # Use selected model for text generation
+                                    model_id=st.session_state.selected_model,  # Use selected model for text generation
                                     region='us-east-1',
                                     bucket_name=st.session_state.bucket_name
                                 )
@@ -1483,8 +1479,7 @@ def main():
                                 seed=image_seed, 
                                 cfg_scale=cfg_scale, 
                                 similarity_strength=similarity_strength, 
-                                is_continues_shot=is_continuous,
-                                reference_image=reference_image
+                                is_continues_shot=is_continuous
                             )
                             progress_bar.progress(25)
                             st.success(f"Generated {len(image_files)} images!")

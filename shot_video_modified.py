@@ -17,14 +17,14 @@ from json import JSONDecodeError
 import sys
 import cv2
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from config import SHOT_SYSTEM,SYSTEM_TEXT_ONLY,SYSTEM_IMAGE_TEXT,DEFAULT_GUIDELINE,LITE_MODEL_ID,CONTINUOUS_SHOT_SYSTEM
+from config import SHOT_SYSTEM,SYSTEM_TEXT_ONLY,SYSTEM_IMAGE_TEXT,DEFAULT_GUIDELINE,LITE_MODEL_ID,REEL_MODEL_ID,PRO_MODEL_ID,CONTINUOUS_SHOT_SYSTEM
 from utils import random_string_name
 from generation import optimize_canvas_prompt
 
 
 
 class ReelGenerator:
-    def __init__(self,model_id = LITE_MODEL_ID,region='us-east-1', bucket_name='s3://bedrock-video-generation-us-east-1-jlvyiv'):
+    def __init__(self, canvas_model_id="amazon.nova-canvas-v1:0", reel_model_id=REEL_MODEL_ID, text_model_id=PRO_MODEL_ID, region='us-east-1', bucket_name='s3://bedrock-video-generation-us-east-1-jlvyiv'):
         """Initialize ReelGenerator with AWS credentials and configuration."""
         config = Config(
             connect_timeout=1000,
@@ -36,7 +36,17 @@ class ReelGenerator:
         self.s3_bucket =  path_parts[0]
         self.session = boto3.session.Session(region_name=region)
         self.bedrock_runtime = self.session.client(service_name='bedrock-runtime', config=config)
-        self.MODEL_ID =model_id
+        
+        # Store all model IDs
+        self.CANVAS_MODEL_ID = canvas_model_id  # For image/shot generation
+        self.REEL_MODEL_ID = reel_model_id      # For video generation
+        self.TEXT_MODEL_ID = text_model_id      # For text generation (shots, prompts)
+        
+        print(f"ReelGenerator initialized:")
+        print(f"  Canvas Model (for images): {self.CANVAS_MODEL_ID}")
+        print(f"  Reel Model (for videos): {self.REEL_MODEL_ID}")
+        print(f"  Text Model (for shots/prompts): {self.TEXT_MODEL_ID}")
+        print(f"  S3 Bucket: {self.s3_bucket}")
 
     def _parse_json(self, pattern: str, text: str) -> str:
         """Parse text using regex pattern."""
@@ -78,7 +88,7 @@ class ReelGenerator:
         ]
 
         response = self.bedrock_runtime.converse_stream(
-            modelId=self.MODEL_ID,
+            modelId=self.TEXT_MODEL_ID,  # Use text model for shot generation
             messages=messages,
             system=system,
             inferenceConfig={"maxTokens": 2000, "topP": 0.9, "temperature": 0.8}
@@ -98,9 +108,10 @@ class ReelGenerator:
         accept = "application/json"
         content_type = "application/json"
 
+        print(f"Generating image using Canvas model: {self.CANVAS_MODEL_ID}")
         response = self.bedrock_runtime.invoke_model(
             body=json.dumps(body),
-            modelId='amazon.nova-canvas-v1:0',
+            modelId=self.CANVAS_MODEL_ID,  # Use the configured canvas model
             accept=accept,
             contentType=content_type
         )
@@ -223,6 +234,10 @@ class ReelGenerator:
 
     def generate_video(self, text_prompt: str, ref_image: str = None,seed:int = 0) -> dict:
         """Generate video from text prompt and optional reference image."""
+        print(f"Generating video with Reel model: {self.REEL_MODEL_ID}")
+        print(f"Using bucket: {self.s3_bucket}")
+        print(f"Prompt: {text_prompt[:100]}...")
+        
         model_input = {
             "taskType": "TEXT_VIDEO",
             "textToVideoParams": {
@@ -237,6 +252,7 @@ class ReelGenerator:
         }
 
         if ref_image:
+            print(f"Using reference image: {ref_image}")
             with open(ref_image, "rb") as f:
                 image = f.read()
                 input_image_base64 = base64.b64encode(image).decode("utf-8")
@@ -249,7 +265,7 @@ class ReelGenerator:
 
         try:
             invocation = self.bedrock_runtime.start_async_invoke(
-                modelId="amazon.nova-reel-v1:0",
+                modelId=self.REEL_MODEL_ID,  # Use the configured reel model
                 modelInput=model_input,
                 outputDataConfig={
                     "s3OutputDataConfig": {
@@ -257,6 +273,7 @@ class ReelGenerator:
                     }
                 }
             )
+            print(f"✅ Video generation started successfully: {invocation['invocationArn']}")
             return invocation
         except Exception as e:
             print(f"Error generating video: {str(e)}")
@@ -352,7 +369,7 @@ def generate_shots(reel_gen:ReelGenerator,story:str,num_shot:int=3,is_continues_
     shots = reel_gen.generate_shots(story, system.replace("<num_shot>",str(num_shot)))
     return shots
 
-def generate_shot_image(reel_gen:ReelGenerator,shots:dict,timestamp:str, seed:int=0,cfg_scale:float = 6.5, similarity_strength:float = 0.8, is_continues_shot = False):
+def generate_shot_image(reel_gen:ReelGenerator,shots:dict,timestamp:str, seed:int=0,cfg_scale:float = 6.5, similarity_strength:float = 0.8, is_continues_shot = False, reference_image=None):
     # Create directories for outputs
     # timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
     output_dir = os.path.join('shot_images', timestamp)
@@ -361,18 +378,38 @@ def generate_shot_image(reel_gen:ReelGenerator,shots:dict,timestamp:str, seed:in
     # Generate images for each shot
     image_files = []
     prompts = []
+    
+    # If reference image is provided, save it first
+    reference_path = None
+    if reference_image:
+        reference_path = os.path.join(output_dir, 'reference_image.png')
+        reference_image.save(reference_path)
+        print(f"Saved reference image to: {reference_path}")
+    
     for idx, shot in enumerate(shots['shots']):
         # optimize prompt for canvas
         prompt,negative_prompt = optimize_canvas_prompt(shot['caption'])
         save_path = os.path.join(output_dir, f'shot_{idx}.png')
         
-        if not image_files:  # First image
+        if idx == 0 and reference_path:  # First shot with reference image
+            # Use the reference image directly as the first frame
+            import shutil
+            shutil.copy2(reference_path, save_path)
+            print(f"Using reference image directly as shot 0: {save_path}")
+            ret = True  # Mark as successful
+        elif not image_files:  # First image, no reference
+            print(f"Generating first shot from text: {prompt[:50]}...")
             ret = reel_gen.generate_text2img(prompt,negative_prompt, save_path,seed,cfg_scale)
-        else:
+        else:  # Subsequent images, use previous images for consistency
+            print(f"Generating shot {idx} using previous images for consistency")
             ret = reel_gen.generate_variations(image_files,prompt,negative_prompt,save_path,seed,cfg_scale,similarity_strength)
+            
         if ret:
             image_files.append(save_path)
             prompts.append(prompt)
+            print(f"Successfully processed shot {idx}: {save_path}")
+        else:
+            print(f"Failed to generate shot {idx}")
 
         if is_continues_shot: #continues_shot only generates the first image
             break
@@ -404,52 +441,104 @@ def generate_reel_prompts(reel_gen:ReelGenerator, shots:dict,image_files:list, s
 def generate_shot_vidoes(reel_gen:ReelGenerator,image_files:list,reel_prompts:list):        
     # Generate videos
     invocation_arns = []
-    for prompt, image_file in zip(reel_prompts, image_files):
-        invocation = reel_gen.generate_video(prompt, image_file)
-        if invocation:
-            invocation_arns.append(invocation['invocationArn'])
+    print(f"Starting video generation for {len(image_files)} shots...")
     
+    for i, (prompt, image_file) in enumerate(zip(reel_prompts, image_files)):
+        print(f"Generating video {i+1}/{len(image_files)}: {image_file}")
+        print(f"Using prompt: {prompt[:100]}...")
+        
+        try:
+            invocation = reel_gen.generate_video(prompt, image_file)
+            if invocation:
+                invocation_arns.append(invocation['invocationArn'])
+                print(f"✅ Video {i+1} invocation started: {invocation['invocationArn']}")
+            else:
+                print(f"❌ Failed to start video {i+1} invocation")
+        except Exception as e:
+            print(f"❌ Error generating video {i+1}: {str(e)}")
+    
+    print(f"Started {len(invocation_arns)} video generation jobs")
+    
+    if not invocation_arns:
+        print("❌ No video generation jobs were started!")
+        return []
+
     # Wait for video generation to complete
-    final_responses = reel_gen.fetch_job_status(invocation_arns)
+    print("Waiting for video generation to complete...")
+    try:
+        final_responses = reel_gen.fetch_job_status(invocation_arns)
+        print(f"Received {len(final_responses)} completed jobs")
+    except Exception as e:
+        print(f"❌ Error fetching job status: {str(e)}")
+        return []
 
     # Download generated videos
     video_files = []
-    for response in final_responses:
-        output_uri = response['outputDataConfig']['s3OutputDataConfig']['s3Uri'] + '/output.mp4'
-        video_file = reel_gen.download_video_from_s3(output_uri, './generated_videos')
-        if video_file:
-            video_files.append(video_file)
+    for i, response in enumerate(final_responses):
+        try:
+            output_uri = response['outputDataConfig']['s3OutputDataConfig']['s3Uri'] + '/output.mp4'
+            print(f"Downloading video {i+1} from: {output_uri}")
+            video_file = reel_gen.download_video_from_s3(output_uri, './generated_videos')
+            if video_file:
+                video_files.append(video_file)
+                print(f"✅ Downloaded video {i+1}: {video_file}")
+            else:
+                print(f"❌ Failed to download video {i+1}")
+        except Exception as e:
+            print(f"❌ Error downloading video {i+1}: {str(e)}")
+    
+    print(f"Successfully generated {len(video_files)} videos")
     return video_files
 
 def sistch_vidoes(reel_gen:ReelGenerator,video_files:list,shots:dict,timestamp:str):      
     # Stitch videos together
     final_video = None
+    caption_video_file = None  # Initialize caption_video_file
     prefix = random_string_name()
     # timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
     os.makedirs(os.path.join('generated_videos',timestamp), exist_ok=True) 
-    for idx in range(len(video_files) - 1):
-        output_path = os.path.join('generated_videos',timestamp,f'{prefix}_stitched_{idx}.mp4')
-        if not final_video:
-            final_video = reel_gen.stitch_videos(video_files[idx], video_files[idx + 1], output_path)
-        else:
-            final_video = reel_gen.stitch_videos(final_video, video_files[idx + 1], output_path)
+    
+    # Check if we have video files to stitch
+    if not video_files or len(video_files) == 0:
+        print("No video files to stitch")
+        return final_video, caption_video_file
+    
+    # If only one video, use it as final video
+    if len(video_files) == 1:
+        final_video = video_files[0]
+    else:
+        # Stitch multiple videos
+        for idx in range(len(video_files) - 1):
+            output_path = os.path.join('generated_videos',timestamp,f'{prefix}_stitched_{idx}.mp4')
+            if not final_video:
+                final_video = reel_gen.stitch_videos(video_files[idx], video_files[idx + 1], output_path)
+            else:
+                final_video = reel_gen.stitch_videos(final_video, video_files[idx + 1], output_path)
     
     # Add captions
-    if final_video:
-        duration = 6  # Duration per shot
-        captions = []
-        for idx, shot in enumerate(shots['shots']):
-            desc_arr = reel_gen._split_caption(shot['caption'])
-            for idy, sub_desc in enumerate(desc_arr):
-                if sub_desc:  # Only add non-empty captions
-                    start_time = idx * duration + (idy * duration / len(desc_arr))
-                    end_time = idx * duration + ((idy + 1) * duration / len(desc_arr))
-                    captions.append((sub_desc, start_time, end_time))
-        
-        caption_video_file = os.path.splitext(final_video)[0] + "_caption.mp4"
-        reel_gen.add_timed_captions(final_video, caption_video_file, captions)
-        print(f"Final video with captions saved to: {caption_video_file}")
-    return final_video,caption_video_file
+    if final_video and shots and 'shots' in shots:
+        try:
+            duration = 6  # Duration per shot
+            captions = []
+            for idx, shot in enumerate(shots['shots']):
+                desc_arr = reel_gen._split_caption(shot['caption'])
+                for idy, sub_desc in enumerate(desc_arr):
+                    if sub_desc:  # Only add non-empty captions
+                        start_time = idx * duration + (idy * duration / len(desc_arr))
+                        end_time = idx * duration + ((idy + 1) * duration / len(desc_arr))
+                        captions.append((sub_desc, start_time, end_time))
+            
+            if captions:  # Only add captions if we have any
+                caption_video_file = os.path.splitext(final_video)[0] + "_caption.mp4"
+                reel_gen.add_timed_captions(final_video, caption_video_file, captions)
+                print(f"Final video with captions saved to: {caption_video_file}")
+            else:
+                print("No captions to add")
+        except Exception as e:
+            print(f"Error adding captions: {str(e)}")
+            # If caption generation fails, we still have the final video
+    
+    return final_video, caption_video_file
 
 def extract_last_frame(video_path: str, output_path: str):
     """

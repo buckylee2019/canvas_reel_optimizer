@@ -364,7 +364,20 @@ def generate_shot_image(reel_gen:ReelGenerator,shots:dict,timestamp:str, seed:in
     has_reference_image = os.path.exists(reference_shot_path)
     
     if has_reference_image:
-        print(f"✅ Found reference image at {reference_shot_path}, will use as first shot")
+        # Verify it's actually a reference image (not a placeholder)
+        try:
+            from PIL import Image
+            ref_img = Image.open(reference_shot_path)
+            # Check if it's your screenshot size (1374, 912) or similar user upload
+            if ref_img.size == (1374, 912) or ref_img.size[0] > 1000:
+                print(f"✅ Found valid reference image at {reference_shot_path}: {ref_img.size}")
+                print(f"🎬 Will use reference image as first shot")
+            else:
+                print(f"⚠️  Found image at {reference_shot_path} but size {ref_img.size} seems too small for reference")
+                has_reference_image = False
+        except Exception as e:
+            print(f"❌ Error checking reference image: {str(e)}")
+            has_reference_image = False
     
     # Generate images for each shot
     image_files = []
@@ -372,9 +385,9 @@ def generate_shot_image(reel_gen:ReelGenerator,shots:dict,timestamp:str, seed:in
     for idx, shot in enumerate(shots['shots']):
         save_path = os.path.join(output_dir, f'shot_{idx}.png')
         
-        # Skip generating first image if reference image exists
+        # Skip generating first image if valid reference image exists
         if idx == 0 and has_reference_image:
-            print(f"🎬 Using reference image as shot_0.png")
+            print(f"🎬 Using reference image as shot_0.png (skipping AI generation)")
             image_files.append(save_path)  # Reference image is already saved there
             prompts.append("Reference image (user uploaded)")
             continue
@@ -383,8 +396,10 @@ def generate_shot_image(reel_gen:ReelGenerator,shots:dict,timestamp:str, seed:in
         prompt,negative_prompt = optimize_canvas_prompt(shot['caption'])
         
         if not image_files:  # First image (no reference)
+            print(f"🎨 Generating first image with AI (no reference found)")
             ret = reel_gen.generate_text2img(prompt,negative_prompt, save_path,seed,cfg_scale)
         else:
+            print(f"🎨 Generating image {idx} with variations from previous images")
             ret = reel_gen.generate_variations(image_files,prompt,negative_prompt,save_path,seed,cfg_scale,similarity_strength)
         if ret:
             image_files.append(save_path)
@@ -393,6 +408,8 @@ def generate_shot_image(reel_gen:ReelGenerator,shots:dict,timestamp:str, seed:in
         if is_continues_shot: #continues_shot only generates the first image
             break
         time.sleep(10)  # Rate limiting
+    
+    print(f"📋 Final image files: {[os.path.basename(f) for f in image_files]}")
     return image_files
 
 def generate_reel_prompts(reel_gen:ReelGenerator, shots:dict,image_files:list, skip:bool = True):

@@ -424,6 +424,7 @@ def generate_shot_vidoes(reel_gen:ReelGenerator,image_files:list,reel_prompts:li
 def sistch_vidoes(reel_gen:ReelGenerator,video_files:list,shots:dict,timestamp:str):      
     # Stitch videos together
     final_video = None
+    caption_video_file = None  # Initialize caption_video_file
     prefix = random_string_name()
     # timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
     os.makedirs(os.path.join('generated_videos',timestamp), exist_ok=True) 

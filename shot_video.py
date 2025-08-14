@@ -35,7 +35,7 @@ class ReelGenerator:
         path_parts = bucket_name[5:].split('/', 1)
         self.s3_bucket =  path_parts[0]
         self.session = boto3.session.Session(region_name=region)
-        self.bedrock_runtime = self.session.client(service_name='bedrock-runtime', config=config)
+        self.bedrock_runtime = self.session.client(service_name='bedrock-runtime')
         self.MODEL_ID =model_id
         print(f"Bucket Name: {self.s3_bucket}, region:{region}")
 
@@ -359,15 +359,30 @@ def generate_shot_image(reel_gen:ReelGenerator,shots:dict,timestamp:str, seed:in
     output_dir = os.path.join('shot_images', timestamp)
     os.makedirs(output_dir, exist_ok=True)
     
+    # Check if reference image already exists (uploaded by user)
+    reference_shot_path = os.path.join(output_dir, 'shot_0.png')
+    has_reference_image = os.path.exists(reference_shot_path)
+    
+    if has_reference_image:
+        print(f"✅ Found reference image at {reference_shot_path}, will use as first shot")
+    
     # Generate images for each shot
     image_files = []
     prompts = []
     for idx, shot in enumerate(shots['shots']):
-        # optimize prompt for canvas
-        prompt,negative_prompt = optimize_canvas_prompt(shot['caption'])
         save_path = os.path.join(output_dir, f'shot_{idx}.png')
         
-        if not image_files:  # First image
+        # Skip generating first image if reference image exists
+        if idx == 0 and has_reference_image:
+            print(f"🎬 Using reference image as shot_0.png")
+            image_files.append(save_path)  # Reference image is already saved there
+            prompts.append("Reference image (user uploaded)")
+            continue
+        
+        # optimize prompt for canvas
+        prompt,negative_prompt = optimize_canvas_prompt(shot['caption'])
+        
+        if not image_files:  # First image (no reference)
             ret = reel_gen.generate_text2img(prompt,negative_prompt, save_path,seed,cfg_scale)
         else:
             ret = reel_gen.generate_variations(image_files,prompt,negative_prompt,save_path,seed,cfg_scale,similarity_strength)

@@ -22,7 +22,8 @@ from config import (
     GENERATED_VIDEOS_DIR,
     REEL_MODEL_ID,
     CANVAS_SIZE,
-    PRO_MODEL_ID)
+    PRO_MODEL_ID,
+    LITE_MODEL_ID)
 from utils import (
     random_string_name,
     load_guideline,
@@ -115,7 +116,7 @@ def optimize_prompt(prompt, guideline_path, model_id=PRO_MODEL_ID, image=None):
     length = len(optimized)
     return optimized, f"{length} chars" + (" (Too Long!)" if length > MAX_PROMPT_LENGTH else "")
 
-def optimize_canvas_prompt(prompt, model_id=PRO_MODEL_ID):
+def optimize_canvas_prompt(prompt, model_id=LITE_MODEL_ID):
     """Optimize prompt for image generation using Canvas model"""
     system = [{"text": SYSTEM_CANVAS}]
     messages = [

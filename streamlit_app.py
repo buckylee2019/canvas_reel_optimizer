@@ -1491,16 +1491,10 @@ def main():
                                 is_continues_shot=is_continuous
                             )
                             
-                            # If we had a reference image, replace the first generated image with it
+                            # Check if reference image was used
                             if reference_path and os.path.exists(reference_path):
-                                if image_files and len(image_files) > 0:
-                                    # Replace first image with reference image
-                                    image_files[0] = reference_path
-                                    st.info("🎬 First frame replaced with your uploaded image")
-                                elif not image_files:
-                                    # No images were generated, add reference as first image
-                                    image_files = [reference_path]
-                                    st.info("🎬 Using your uploaded image as the only frame")
+                                st.info("🎬 Your uploaded image is being used as the first frame")
+                            
                             progress_bar.progress(25)
                             st.success(f"Generated {len(image_files)} images!")
                             

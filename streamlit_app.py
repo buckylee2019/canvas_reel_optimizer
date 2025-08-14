@@ -1464,10 +1464,13 @@ def main():
                                     reference_image = Image.open(BytesIO(image_bytes))
                                     if reference_image.mode != 'RGB':
                                         reference_image = reference_image.convert('RGB')
-                                    st.info(f"✅ Using reference image: {reference_image.size}, mode: {reference_image.mode}")
+                                    st.success(f"✅ Reference image processed: {reference_image.size}, mode: {reference_image.mode}")
+                                    st.info("🎨 First shot will be generated using your reference image as style guide")
                                 except Exception as e:
-                                    st.warning(f"Could not process reference image: {str(e)}")
+                                    st.error(f"Could not process reference image: {str(e)}")
                                     reference_image = None
+                            else:
+                                st.info("📝 No reference image provided - generating shots from text prompts only")
                             
                             image_files = generate_shot_image(
                                 reel_gen, 

@@ -374,16 +374,23 @@ def generate_shot_image(reel_gen:ReelGenerator,shots:dict,timestamp:str, seed:in
         prompt,negative_prompt = optimize_canvas_prompt(shot['caption'])
         save_path = os.path.join(output_dir, f'shot_{idx}.png')
         
-        if not image_files and not reference_path:  # First image, no reference
-            ret = reel_gen.generate_text2img(prompt,negative_prompt, save_path,seed,cfg_scale)
-        elif not image_files and reference_path:  # First image, with reference
+        if idx == 0 and reference_path:  # First shot with reference image
+            # Use reference image to guide the first shot generation
+            print(f"Generating first shot using reference image: {reference_path}")
             ret = reel_gen.generate_variations([reference_path],prompt,negative_prompt,save_path,seed,cfg_scale,similarity_strength)
+        elif not image_files:  # First image, no reference
+            print(f"Generating first shot from text: {prompt[:50]}...")
+            ret = reel_gen.generate_text2img(prompt,negative_prompt, save_path,seed,cfg_scale)
         else:  # Subsequent images, use previous images for consistency
+            print(f"Generating shot {idx} using previous images for consistency")
             ret = reel_gen.generate_variations(image_files,prompt,negative_prompt,save_path,seed,cfg_scale,similarity_strength)
             
         if ret:
             image_files.append(save_path)
             prompts.append(prompt)
+            print(f"Successfully generated shot {idx}: {save_path}")
+        else:
+            print(f"Failed to generate shot {idx}")
 
         if is_continues_shot: #continues_shot only generates the first image
             break

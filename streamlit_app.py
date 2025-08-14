@@ -1520,22 +1520,6 @@ def main():
                             if final_video:
                                 st.success("Long video generated successfully!")
                                 
-                                # Display the final video
-                                st.subheader("🎬 Generated Long Video")
-                                
-                                if caption_video_file and os.path.exists(caption_video_file):
-                                    # Show both videos if captions were successfully added
-                                    col1, col2 = st.columns(2)
-                                    with col1:
-                                        display_video(final_video, "Final Stitched Video")
-                                    with col2:
-                                        display_video(caption_video_file, "Video with Captions")
-                                else:
-                                    # Show only the final video if captions failed
-                                    display_video(final_video, "Final Stitched Video")
-                                    if not caption_video_file:
-                                        st.warning("Captions could not be added to the video")
-                                
                                 # Store results in session state
                                 st.session_state.final_video = final_video
                                 st.session_state.caption_video = caption_video_file

@@ -11,6 +11,8 @@ from PIL import Image
 import io
 import sys
 import concurrent.futures
+from functools import wraps
+
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from config import (
     SYSTEM_TEXT_ONLY,
@@ -32,11 +34,30 @@ from utils import (
     download_video
 )
 
-# Initialize AWS clients with default credentials (uses IAM roles in ECS)
-session = boto3.session.Session(region_name='us-east-1')
-client = session.client(service_name='bedrock-runtime', 
-                       config=Config(connect_timeout=600, read_timeout=600))
-bedrock_runtime = session.client("bedrock-runtime")
+def retry_with_backoff(max_retries=3, base_delay=1):
+    """Retry decorator with exponential backoff."""
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            for attempt in range(max_retries):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    if attempt == max_retries - 1:
+                        raise e
+                    delay = base_delay * (2 ** attempt)
+                    time.sleep(delay)
+            return None
+        return wrapper
+    return decorator
+
+def get_bedrock_client(region_name='us-east-1'):
+    """Get bedrock client directly with boto3."""
+    return boto3.client('bedrock-runtime', region_name=region_name)
+
+# Legacy compatibility
+client = get_bedrock_client()
+bedrock_runtime = get_bedrock_client()
 
 # Constants
 TARGET_WIDTH = 1280
@@ -155,41 +176,40 @@ def optimize_canvas_prompt(prompt, model_id=LITE_MODEL_ID):
     return prompt, negative_prompt
 
 def generate_image_pair(original_prompt, optimized_prompt, negative_prompt="", quality="standard", num_images=1, height=720, width=1280, seed=0, cfg_scale=6.5):
-    """Generate images in parallel for both original and optimized prompts"""
-    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-        # Submit both image generation tasks
-        future_original = executor.submit(
-            generate_single_image,
-            original_prompt,
-            negative_prompt,
-            quality,
-            num_images,
-            height,
-            width,
-            seed,
-            cfg_scale
-        )
-        future_optimized = executor.submit(
-            generate_single_image,
-            optimized_prompt,
-            negative_prompt,
-            quality,
-            num_images,
-            height,
-            width,
-            seed,
-            cfg_scale
-        )
-        
-        # Wait for both tasks to complete
-        original_images = future_original.result()
-        optimized_images = future_optimized.result()
-        
-        # Return the individual results (now single paths when num_images=1)
-        return original_images, optimized_images
+    """Generate images sequentially to avoid connection issues"""
+    # Generate images sequentially instead of in parallel to avoid connection limits
+    print("Generating original image...")
+    original_images = generate_single_image(
+        original_prompt,
+        negative_prompt,
+        quality,
+        num_images,
+        height,
+        width,
+        seed,
+        cfg_scale
+    )
+    
+    # Small delay between requests
+    time.sleep(0.5)
+    
+    print("Generating optimized image...")
+    optimized_images = generate_single_image(
+        optimized_prompt,
+        negative_prompt,
+        quality,
+        num_images,
+        height,
+        width,
+        seed,
+        cfg_scale
+    )
+    
+    return original_images, optimized_images
 
+@retry_with_backoff(max_retries=3, base_delay=1.0)
 def generate_single_image(prompt, negative_prompt="", quality="standard", num_images=1, height=720, width=1280, seed=0, cfg_scale=6.5):
-    """Generate image using Nova Canvas model"""
+    """Generate image using Nova Canvas model with retry logic"""
     body = json.dumps({
         "taskType": "TEXT_IMAGE",
         "textToImageParams": {
@@ -209,7 +229,10 @@ def generate_single_image(prompt, negative_prompt="", quality="standard", num_im
     })
     
     try:
-        response = bedrock_runtime.invoke_model(
+        # Use connection manager
+        bedrock_client = get_bedrock_client()
+        
+        response = bedrock_client.invoke_model(
             body=body,
             modelId='amazon.nova-canvas-v1:0',
             accept="application/json",

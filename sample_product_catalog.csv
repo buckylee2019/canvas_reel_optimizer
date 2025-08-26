@@ -1,0 +1,11 @@
+product_id,name,description,price,currency,category,brand,image_url,availability,condition,custom_label_1,custom_label_2
+SKU001,Wireless Bluetooth Headphones,"Premium noise-canceling wireless headphones with 30-hour battery life and crystal-clear sound quality",199.99,USD,Electronics,AudioTech,https://example.com/headphones.jpg,in stock,new,bestseller,premium
+SKU002,Organic Cotton T-Shirt,"Soft and comfortable organic cotton t-shirt available in multiple colors. Perfect for casual wear",29.99,USD,Clothing,EcoWear,https://example.com/tshirt.jpg,in stock,new,eco-friendly,casual
+SKU003,Smart Fitness Watch,"Advanced fitness tracking watch with heart rate monitor GPS and smartphone connectivity",299.99,USD,Electronics,FitTech,https://example.com/watch.jpg,in stock,new,fitness,smart-device
+SKU004,Ceramic Coffee Mug Set,"Set of 4 handcrafted ceramic coffee mugs with unique glazed finish. Dishwasher and microwave safe",45.99,USD,Home & Kitchen,CraftWare,https://example.com/mugs.jpg,in stock,new,handmade,kitchen
+SKU005,LED Desk Lamp,"Adjustable LED desk lamp with touch controls and USB charging port. Perfect for home office",79.99,USD,Home & Office,BrightLight,https://example.com/lamp.jpg,in stock,new,office,lighting
+SKU006,Yoga Mat Premium,"High-quality non-slip yoga mat made from eco-friendly materials. Includes carrying strap",59.99,USD,Sports & Fitness,ZenFit,https://example.com/yogamat.jpg,in stock,new,eco-friendly,fitness
+SKU007,Stainless Steel Water Bottle,"Insulated stainless steel water bottle keeps drinks cold for 24 hours or hot for 12 hours",34.99,USD,Sports & Fitness,HydroMax,https://example.com/bottle.jpg,in stock,new,eco-friendly,hydration
+SKU008,Wireless Phone Charger,"Fast wireless charging pad compatible with all Qi-enabled devices. Sleek modern design",49.99,USD,Electronics,ChargeTech,https://example.com/charger.jpg,in stock,new,wireless,tech-accessory
+SKU009,Scented Candle Set,"Set of 3 premium soy wax candles with relaxing lavender eucalyptus and vanilla scents",39.99,USD,Home & Garden,AromaBliss,https://example.com/candles.jpg,in stock,new,aromatherapy,relaxation
+SKU010,Bluetooth Speaker Portable,"Compact waterproof Bluetooth speaker with 360-degree sound and 12-hour battery life",89.99,USD,Electronics,SoundWave,https://example.com/speaker.jpg,in stock,new,portable,waterproof

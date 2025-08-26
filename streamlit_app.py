@@ -56,13 +56,38 @@ from generation import (
 # Helper Classes for Outpainting #
 ###########################
 
+import boto3
+import time
+from functools import wraps
+
+def retry_with_backoff(max_retries=3, base_delay=1):
+    """Retry decorator with exponential backoff."""
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            for attempt in range(max_retries):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    if attempt == max_retries - 1:
+                        raise e
+                    delay = base_delay * (2 ** attempt)
+                    time.sleep(delay)
+            return None
+        return wrapper
+    return decorator
+
 class NovaCanvasResizer:
     """Production-ready AI image resizer using Amazon Nova Canvas."""
     
     def __init__(self, region_name: str = "us-east-1"):
-        """Initialize the resizer with AWS Bedrock client."""
-        self.bedrock = boto3.client(service_name="bedrock-runtime", region_name=region_name)
+        """Initialize the resizer with direct boto3 client."""
+        self.region_name = region_name
         self.model_id = "amazon.nova-canvas-v1:0"
+        
+    def get_bedrock_client(self):
+        """Get bedrock client directly with boto3."""
+        return boto3.client('bedrock-runtime', region_name=self.region_name)
         
     def _image_to_base64(self, image: Image.Image) -> str:
         """Convert PIL Image to base64 string with proper format validation."""
@@ -133,6 +158,7 @@ class NovaCanvasResizer:
         
         return canvas, mask
     
+    @retry_with_backoff(max_retries=3, base_delay=1.0)
     def resize_image(self, 
                     original_image: Image.Image, 
                     target_width: int, 
@@ -188,8 +214,9 @@ class NovaCanvasResizer:
                 }
             }
             
-            # Invoke Nova Canvas
-            response = self.bedrock.invoke_model(
+            # Invoke Nova Canvas using connection manager
+            bedrock_client = self.get_bedrock_client()
+            response = bedrock_client.invoke_model(
                 body=json.dumps(inference_params),
                 modelId=self.model_id,
                 accept="application/json",
@@ -217,6 +244,7 @@ class NovaCanvasResizer:
         except Exception as e:
             raise Exception(f"Resize failed: {str(e)}")
     
+    @retry_with_backoff(max_retries=3, base_delay=1.0)
     def outpaint_image(self, 
                       original_image: Image.Image, 
                       prompt: str,
@@ -272,8 +300,9 @@ class NovaCanvasResizer:
             if mask_prompt:
                 inference_params["outPaintingParams"]["maskPrompt"] = mask_prompt
             
-            # Invoke Nova Canvas
-            response = self.bedrock.invoke_model(
+            # Invoke Nova Canvas using connection manager
+            bedrock_client = self.get_bedrock_client()
+            response = bedrock_client.invoke_model(
                 body=json.dumps(inference_params),
                 modelId=self.model_id,
                 accept="application/json",

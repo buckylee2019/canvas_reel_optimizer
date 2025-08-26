@@ -21,6 +21,7 @@ import io
 from generation import generate_single_image, generate_video, optimize_prompt
 from config import DEFAULT_BUCKET, DEFAULT_GUIDELINE
 from virtual_try_on import VirtualTryOnGenerator, enhance_dpa_with_try_on, get_vto_category
+from image_understanding import DPAImageAnalyzer, analyze_product_for_dpa
 
 # Configure logging first
 logging.basicConfig(level=logging.INFO)
@@ -65,6 +66,11 @@ class AdCreative:
     video_negative_prompt: str = ""  # Negative prompt for video generation
     target_audience: str = ""
     ad_format: str = "single_image"  # single_image, carousel, video, collection
+    ai_analysis: dict = None  # Store AI analysis results for VTO and other enhancements
+    scene_prompts: list = None  # Multiple scene prompts for separate image generation
+    scene_names: list = None  # Names for each scene for tracking
+    downloaded_product_image: Image.Image = None  # Cached product image to avoid re-download
+    original_image_path: str = None  # Path to saved original product image for analytics
     
 @dataclass
 class DPATemplate:
@@ -158,7 +164,7 @@ class DPAAutomator:
         ]
     
     def create_ad_creative(self, product: ProductData, template: DPATemplate) -> AdCreative:
-        """Generate ad creative from product data and template"""
+        """Generate ad creative from product data and template with automatic AI analysis"""
         
         # Generate headline
         headline = template.headline_template.format(
@@ -177,21 +183,257 @@ class DPAAutomator:
             category=product.category
         )
         
-        # Create image prompt
-        image_prompt = f"{template.image_style}, {product.name}, {product.description}, professional photography, high quality"
-        
-        # Create video prompt
+        # Base prompts from template
+        base_image_prompt = f"{template.image_style}, {product.name}, professional photography, high quality"
         video_prompt = f"{template.video_style}, {product.name}, {product.description}, engaging and dynamic"
         
-        return AdCreative(
+        # Initialize with template negative prompts
+        image_negative_prompt = template.image_negative_style
+        video_negative_prompt = template.video_negative_style
+        
+        # Store multiple image prompts for different scenes
+        image_prompts = [base_image_prompt]  # Start with base prompt
+        scene_names = ["base_template"]  # Track scene names
+        
+        # Store downloaded product image for reuse
+        downloaded_product_image = None
+        
+        # Automatic AI image analysis if product has image
+        ai_analysis = None
+        if hasattr(product, 'image_url') and product.image_url:
+            try:
+                logger.info(f"🧠 Performing automatic AI analysis for {product.name}")
+                
+                # Download product image ONCE for both AI analysis and later use
+                downloaded_product_image = self._download_product_image(product.image_url)
+                if downloaded_product_image:
+                    # Save original product image for analytics display
+                    original_image_path = self._save_original_product_image(downloaded_product_image, product)
+                    
+                    # Perform comprehensive AI analysis
+                    ai_analysis = analyze_product_for_dpa(
+                        product_image=downloaded_product_image,
+                        product_data={
+                            'name': product.name,
+                            'category': product.category,
+                            'description': product.description
+                        },
+                        analysis_type="comprehensive"
+                    )
+                    
+                    if ai_analysis and ai_analysis.get('success'):
+                        logger.info(f"✅ AI analysis successful for {product.name}")
+                        
+                        # Create SEPARATE prompts for each AI-suggested background
+                        if 'background_suggestions' in ai_analysis and ai_analysis['background_suggestions']:
+                            background_scenes = ai_analysis['background_suggestions']
+                            logger.info(f"🎨 Creating {len(background_scenes)} separate image prompts")
+                            
+                            # Replace base prompt with individual scene prompts
+                            image_prompts = []
+                            scene_names = []
+                            
+                            for i, scene in enumerate(background_scenes[:5]):  # Use up to 5 scenes
+                                scene_prompt = f"{scene}, professional photography, high quality"
+                                scene_prompt = scene_prompt.replace("*","")
+                                image_prompts.append(scene_prompt)
+                                
+                                # Create clean scene name for tracking
+                                scene_name = scene.split(',')[0].strip()  # Take first part of scene description
+                                scene_name = self._clean_filename(scene_name)
+                                scene_names.append(f"ai_scene_{i+1}_{scene_name}")
+                        
+                        # Apply AI-enhanced negative prompts
+                        if 'image_generation_tips' in ai_analysis:
+                            tips = ai_analysis['image_generation_tips']
+                            ai_negatives = self._extract_negative_prompts_from_tips(tips)
+                            if ai_negatives:
+                                image_negative_prompt = f"{template.image_negative_style}, {ai_negatives}"
+                        
+                        logger.info(f"🚀 Created {len(image_prompts)} separate scene prompts for {product.name}")
+                    else:
+                        logger.warning(f"⚠️ AI analysis failed for {product.name}")
+                        
+            except Exception as e:
+                logger.error(f"❌ Error in automatic AI analysis for {product.name}: {e}")
+        
+        creative = AdCreative(
             headline=headline,
             description=description,
-            image_prompt=image_prompt,
+            image_prompt=base_image_prompt,  # Keep base prompt for compatibility
             video_prompt=video_prompt,
-            image_negative_prompt=template.image_negative_style,
-            video_negative_prompt=template.video_negative_style,
+            image_negative_prompt=image_negative_prompt,
+            video_negative_prompt=video_negative_prompt,
             ad_format=template.ad_format
         )
+        
+        # Store AI analysis results and ALL scene prompts for multi-scene generation
+        if ai_analysis:
+            creative.ai_analysis = ai_analysis
+        
+        # Store all scene prompts and names for multi-scene generation
+        creative.scene_prompts = image_prompts  # All scene prompts will be used
+        creative.scene_names = scene_names
+        
+        # Store downloaded product image and original image path for reuse
+        creative.downloaded_product_image = downloaded_product_image
+        if downloaded_product_image:
+            creative.original_image_path = getattr(self, '_last_original_image_path', None)
+        
+        logger.info(f"✅ Creative generated with {len(image_prompts)} scene prompts for {product.name}")
+        for i, (prompt, name) in enumerate(zip(image_prompts, scene_names)):
+            logger.info(f"   Scene {i+1}: {name} - {prompt[:60]}...")
+            
+        return creative
+    
+    def _save_original_product_image(self, product_image: Image.Image, product: ProductData) -> str:
+        """Save original product image for analytics display"""
+        try:
+            output_dir = Path(self.config["output_directory"])
+            output_dir.mkdir(exist_ok=True)
+            
+            # Create filename for original product image
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            original_filename = f"original_{product.product_id}_{timestamp}.png"
+            original_path = output_dir / original_filename
+            
+            # Save original product image
+            product_image.save(original_path)
+            logger.info(f"📷 Saved original product image: {original_path}")
+            
+            # Store path for later use
+            self._last_original_image_path = str(original_path)
+            
+            return str(original_path)
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to save original product image: {e}")
+            return None
+    
+    def _clean_filename(self, filename: str) -> str:
+        """Clean filename by removing or replacing invalid characters"""
+        import re
+        
+        # Remove or replace invalid filename characters
+        # Replace common problematic characters
+        filename = filename.replace('/', '_')
+        filename = filename.replace('\\', '_')
+        filename = filename.replace('*', '_')
+        filename = filename.replace('?', '_')
+        filename = filename.replace('<', '_')
+        filename = filename.replace('>', '_')
+        filename = filename.replace('|', '_')
+        filename = filename.replace(':', '_')
+        filename = filename.replace('"', '_')
+        
+        # Replace spaces and multiple underscores
+        filename = filename.replace(' ', '_')
+        filename = re.sub(r'_+', '_', filename)  # Replace multiple underscores with single
+        
+        # Remove leading/trailing underscores and convert to lowercase
+        filename = filename.strip('_').lower()
+        
+        # Limit length to avoid filesystem issues
+        if len(filename) > 50:
+            filename = filename[:50].rstrip('_')
+        
+        # Ensure we have a valid filename
+        if not filename or filename == '_':
+            filename = 'scene'
+            
+        return filename
+    
+    def _download_product_image(self, image_url: str) -> Optional[Image.Image]:
+        """Download product image from URL with enhanced error handling and RGB conversion"""
+        try:
+            if not image_url:
+                return None
+                
+            logger.info(f"📷 Downloading product image from: {image_url}")
+            response = requests.get(image_url, timeout=30)
+            response.raise_for_status()
+            
+            # Open image from response content
+            image = Image.open(io.BytesIO(response.content))
+            
+            # Convert to RGB if necessary
+            if image.mode != 'RGB':
+                image = image.convert('RGB')
+            
+            logger.info(f"✅ Successfully downloaded image: {image.size}")
+            return image
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to download product image from {image_url}: {e}")
+            return None
+    
+    def _extract_negative_prompts_from_tips(self, tips: List[str]) -> str:
+        """Extract negative prompts from AI generation tips"""
+        negative_keywords = []
+        
+        for tip in tips:
+            tip_lower = tip.lower()
+            # Look for "avoid" keywords in tips
+            if 'avoid' in tip_lower:
+                # Extract what to avoid
+                avoid_part = tip_lower.split('avoid')[-1].strip()
+                # Clean up the text
+                avoid_part = avoid_part.replace('harsh', '').replace('shadows', 'harsh shadows')
+                avoid_part = avoid_part.replace('poor', '').replace('lighting', 'poor lighting')
+                negative_keywords.append(avoid_part.strip(', .'))
+        
+        return ', '.join(negative_keywords) if negative_keywords else ""
+    
+    def _enhance_with_ai_vto(
+        self,
+        base_image: Image.Image,
+        product_image: Image.Image,
+        product_category: str,
+        enhancement_type: str = "auto",
+        ai_mask_prompt: str = None
+    ) -> Optional[Image.Image]:
+        """Enhanced VTO with AI-analyzed mask prompts"""
+        try:
+            from virtual_try_on import VirtualTryOnGenerator
+            
+            vto_generator = VirtualTryOnGenerator()
+            
+            # Determine enhancement strategy
+            if enhancement_type == "auto":
+                clothing_categories = ["UPPER_BODY", "LOWER_BODY", "FULL_BODY", "DRESS", "OUTERWEAR"]
+                if product_category.upper() in clothing_categories:
+                    enhancement_type = "clothing"
+                else:
+                    enhancement_type = "placement"
+            
+            if enhancement_type == "clothing":
+                # Use garment-based try-on with AI mask prompt if available
+                results, _ = vto_generator.generate_product_try_on(
+                    source_image=base_image,
+                    product_image=product_image,
+                    product_category=product_category.upper(),
+                    mask_prompt=ai_mask_prompt,  # Use AI-suggested mask prompt
+                    quality="premium"
+                )
+            else:
+                # Use prompt-based placement with AI mask prompt
+                placement_prompt = ai_mask_prompt or f"replace the product with the {product_category}"
+                results = vto_generator.generate_product_placement(
+                    scene_image=base_image,
+                    product_image=product_image,
+                    placement_prompt=placement_prompt,
+                    quality="premium"
+                )
+            
+            if results and len(results) > 0:
+                logger.info(f"✅ AI-enhanced VTO successful with mask: {ai_mask_prompt}")
+                return results[0]  # Return best result
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"❌ Error in AI-enhanced VTO: {e}")
+            return None
     
     def _upload_to_s3(self, local_path: str, s3_key: str) -> Optional[str]:
         """Upload file to S3 and return S3 URL"""
@@ -261,30 +503,7 @@ class DPAAutomator:
             logger.error(f"Failed to generate presigned URL for {s3_url}: {e}")
             return None
     
-    def _download_product_image(self, image_url: str) -> Optional[Image.Image]:
-        """Download product image from URL"""
-        try:
-            if not image_url:
-                return None
-                
-            logger.info(f"Downloading product image from: {image_url}")
-            response = requests.get(image_url, timeout=30)
-            response.raise_for_status()
-            
-            # Open image from response content
-            image = Image.open(io.BytesIO(response.content))
-            
-            # Convert to RGB if necessary
-            if image.mode != 'RGB':
-                image = image.convert('RGB')
-            
-            logger.info(f"Successfully downloaded image: {image.size}")
-            return image
-            
-        except Exception as e:
-            logger.error(f"Failed to download image from {image_url}: {e}")
-            return None
-    
+
     def optimize_creative(self, creative: AdCreative, product: ProductData) -> AdCreative:
         """Optimize ad creative using AI"""
         try:
@@ -363,10 +582,20 @@ class DPAAutomator:
         
         platform_config = self.config["platforms"].get(template.platform, {})
         
-        # Download product image if available
-        product_image = None
-        if hasattr(product, 'image_url') and product.image_url:
+        # Use already downloaded product image from creative (avoid duplicate download)
+        product_image = getattr(creative, 'downloaded_product_image', None)
+        original_image_path = getattr(creative, 'original_image_path', None)
+        
+        # Add original image info to metadata
+        if product_image and original_image_path:
+            assets["metadata"]["original_product_image"] = original_image_path
+            logger.info(f"📷 Using cached product image for {product.name}")
+        elif hasattr(product, 'image_url') and product.image_url:
+            logger.warning(f"⚠️ Product image not cached, downloading again for {product.name}")
             product_image = self._download_product_image(product.image_url)
+            if product_image:
+                original_image_path = self._save_original_product_image(product_image, product)
+                assets["metadata"]["original_product_image"] = original_image_path
         
         try:
             # Generate images for different sizes
@@ -379,170 +608,248 @@ class DPAAutomator:
                     logger.info(f"Generating image with validated dimensions: {validated_width}x{validated_height}")
                     
                     if product_image and NovaCanvasResizer:
-                        # Use outpainting with product image
-                        try:
-                            resizer = NovaCanvasResizer()
+                        # Use outpainting with product image for EACH SCENE
+                        logger.info(f"Using outpainting with multi-scene prompts for {product.name}")
+                        assets["metadata"]["generation_method"] = "outpainting_multi_scene"
+                        
+                        # Get all scene prompts for outpainting
+                        scene_prompts = getattr(creative, 'scene_prompts', [creative.image_prompt])
+                        scene_names = getattr(creative, 'scene_names', ['base_template'])
+                        
+                        logger.info(f"🎨 Outpainting {len(scene_prompts)} separate scenes for {product.name}")
+                        
+                        for scene_idx, (scene_prompt, scene_name) in enumerate(zip(scene_prompts, scene_names)):
+                            logger.info(f"🖼️ Outpainting scene {scene_idx + 1}/{len(scene_prompts)}: {scene_name}")
                             
-                            # Create enhanced prompt for outpainting
-                            outpainting_prompt = f"Professional advertising style, {creative.image_prompt}, commercial photography, high quality, marketing ready"
+                            try:
+                                resizer = NovaCanvasResizer()
+                                
+                                # Create enhanced prompt for this scene's outpainting
+                                outpainting_prompt = f"Professional advertising style, {scene_prompt}, commercial photography, high quality, marketing ready"
+                                
+                                # Resize and outpaint the product image with scene-specific prompt
+                                result_image = resizer.resize_image(
+                                    original_image=product_image,
+                                    target_width=validated_width,
+                                    target_height=validated_height,
+                                    prompt=outpainting_prompt,
+                                    quality=self.config["image_quality"]
+                                )
+                                
+                                if result_image:
+                                    # Save the result image locally with scene-specific name
+                                    output_dir = Path(self.config["output_directory"])
+                                    output_dir.mkdir(exist_ok=True)
+                                    
+                                    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                                    clean_scene_name = self._clean_filename(scene_name)
+                                    filename = f"dpa_outpaint_{product.product_id}_{clean_scene_name}_{validated_width}x{validated_height}_{timestamp}.png"
+                                    local_path = output_dir / filename
+                                    
+                                    result_image.save(local_path)
+                                    logger.info(f"✅ Saved outpainted scene {scene_idx + 1}: {local_path}")
+                                    
+                                    # Upload to S3
+                                    s3_key = f"dpa_generated/{filename}"
+                                    s3_url = self._upload_to_s3(str(local_path), s3_key)
+                                    
+                                    # Add scene image to assets
+                                    scene_asset = {
+                                        "size": f"{validated_width}x{validated_height}",
+                                        "local_path": str(local_path),
+                                        "s3_url": s3_url,
+                                        "prompt": outpainting_prompt,
+                                        "scene_prompt": scene_prompt,  # Original scene prompt
+                                        "method": "outpainting",
+                                        "image_type": "outpainted_scene",
+                                        "scene_name": scene_name,
+                                        "scene_index": scene_idx + 1,
+                                        "total_scenes": len(scene_prompts)
+                                    }
+                                    assets["images"].append(scene_asset)
+                                    
+                                    logger.info(f"✅ Outpainted scene {scene_idx + 1} completed: {scene_name}")
+                                else:
+                                    logger.warning(f"⚠️ Outpainting failed for scene {scene_idx + 1}: {scene_name}")
+                                    
+                            except Exception as e:
+                                logger.error(f"❌ Outpainting error for scene {scene_name}: {e}")
+                                
+                                # Fallback to text-to-image for this scene
+                                logger.info(f"🔄 Falling back to text-to-image for scene: {scene_name}")
+                                image_result = generate_single_image(
+                                    prompt=scene_prompt,
+                                    negative_prompt=creative.image_negative_prompt,
+                                    width=validated_width,
+                                    height=validated_height,
+                                    quality=self.config["image_quality"]
+                                )
+                                
+                                if image_result:
+                                    # Scene-specific filename for fallback
+                                    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                                    clean_scene_name = self._clean_filename(scene_name)
+                                    fallback_filename = f"dpa_fallback_{product.product_id}_{clean_scene_name}_{validated_width}x{validated_height}_{timestamp}.png"
+                                    
+                                    # Copy to scene-specific filename
+                                    output_dir = Path(self.config["output_directory"])
+                                    fallback_path = output_dir / fallback_filename
+                                    
+                                    import shutil
+                                    shutil.copy2(image_result, fallback_path)
+                                    
+                                    # Upload fallback image
+                                    fallback_s3_key = f"dpa_generated/{fallback_filename}"
+                                    fallback_s3_url = self._upload_to_s3(str(fallback_path), fallback_s3_key)
+                                    
+                                    fallback_asset = {
+                                        "size": f"{validated_width}x{validated_height}",
+                                        "local_path": str(fallback_path),
+                                        "s3_url": fallback_s3_url,
+                                        "prompt": scene_prompt,
+                                        "method": "text_to_image_fallback",
+                                        "image_type": "scene_generated",
+                                        "scene_name": scene_name,
+                                        "scene_index": scene_idx + 1,
+                                        "total_scenes": len(scene_prompts)
+                                    }
+                                    assets["images"].append(fallback_asset)
+                                    
+                                    logger.info(f"✅ Fallback scene {scene_idx + 1} completed: {scene_name}")
+                        
+                        # Update metadata with scene information
+                        assets["metadata"]["total_scenes"] = len(scene_prompts)
+                        assets["metadata"]["scene_names"] = scene_names
+                        if hasattr(creative, 'ai_analysis') and creative.ai_analysis:
+                            assets["metadata"]["has_ai_analysis"] = True
+                            assets["metadata"]["ai_background_scenes"] = len(scene_prompts)
+                    else:
+                        # Use text-to-image generation with multiple scenes
+                        logger.info(f"Using text-to-image generation for {product.name}")
+                        assets["metadata"]["generation_method"] = "text_to_image_multi_scene"
+                        
+                        # Generate images for each scene prompt
+                        scene_prompts = getattr(creative, 'scene_prompts', [creative.image_prompt])
+                        scene_names = getattr(creative, 'scene_names', ['base_template'])
+                        
+                        logger.info(f"🎨 Generating {len(scene_prompts)} separate scene images for {product.name}")
+                        
+                        for scene_idx, (scene_prompt, scene_name) in enumerate(zip(scene_prompts, scene_names)):
+                            logger.info(f"🖼️ Generating scene {scene_idx + 1}/{len(scene_prompts)}: {scene_name}")
                             
-                            logger.info(f"Using outpainting with product image for {product.name}")
-                            assets["metadata"]["generation_method"] = "outpainting"
-                            
-                            # Resize and outpaint the product image
-                            result_image = resizer.resize_image(
-                                original_image=product_image,
-                                target_width=validated_width,
-                                target_height=validated_height,
-                                prompt=outpainting_prompt,
-                                quality=self.config["image_quality"]
-                            )
-                            
-                            if result_image:
-                                # Save the result image locally
-                                output_dir = Path(self.config["output_directory"])
-                                output_dir.mkdir(exist_ok=True)
-                                
-                                filename = f"dpa_{product.product_id}_{validated_width}x{validated_height}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
-                                local_path = output_dir / filename
-                                
-                                result_image.save(local_path)
-                                logger.info(f"Saved locally: {local_path}")
-                                
-                                # Upload to S3
-                                s3_key = f"dpa_generated/{filename}"
-                                s3_url = self._upload_to_s3(str(local_path), s3_key)
-                                
-                                assets["images"].append({
-                                    "size": f"{validated_width}x{validated_height}",
-                                    "local_path": str(local_path),
-                                    "s3_url": s3_url,
-                                    "prompt": outpainting_prompt,
-                                    "method": "outpainting"
-                                })
-                                
-                                logger.info(f"Saved outpainted image: {local_path}")
-                            else:
-                                logger.warning(f"Outpainting failed for {width}x{height}")
-                                
-                        except Exception as e:
-                            logger.error(f"Outpainting failed: {e}, falling back to text-to-image")
-                            # Fallback to text-to-image
                             image_result = generate_single_image(
-                                prompt=creative.image_prompt,
+                                prompt=scene_prompt,
                                 negative_prompt=creative.image_negative_prompt,
-                                width=width,
-                                height=height,
+                                width=validated_width,
+                                height=validated_height,
                                 quality=self.config["image_quality"]
                             )
                             
                             if image_result:
-                                # Upload to S3
-                                filename = Path(image_result).name
-                                s3_key = f"dpa_generated/{filename}"
-                                s3_url = self._upload_to_s3(image_result, s3_key)
+                                # Create scene-specific filename
+                                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                                clean_scene_name = self._clean_filename(scene_name)
+                                scene_filename = f"dpa_{product.product_id}_{clean_scene_name}_{validated_width}x{validated_height}_{timestamp}.png"
                                 
-                                assets["images"].append({
-                                    "size": f"{width}x{height}",
-                                    "local_path": image_result,
-                                    "s3_url": s3_url,
-                                    "prompt": creative.image_prompt,
-                                    "method": "text_to_image_fallback"
-                                })
-                                assets["metadata"]["generation_method"] = "text_to_image_fallback"
-                    else:
-                        # Use text-to-image generation (original method)
-                        logger.info(f"Using text-to-image generation for {product.name}")
-                        assets["metadata"]["generation_method"] = "text_to_image"
-                        
-                        image_result = generate_single_image(
-                            prompt=creative.image_prompt,
-                            negative_prompt=creative.image_negative_prompt,
-                            width=validated_width,
-                            height=validated_height,
-                            quality=self.config["image_quality"]
-                        )
-                        
-                        if image_result:
-                            # Always save the base AI-generated image first
-                            base_filename = Path(image_result).name
-                            base_s3_key = f"dpa_generated/{base_filename}"
-                            base_s3_url = self._upload_to_s3(image_result, base_s3_key)
-                            
-                            # Add base image to assets
-                            base_image_asset = {
-                                "size": f"{validated_width}x{validated_height}",
-                                "local_path": image_result,
-                                "s3_url": base_s3_url,
-                                "prompt": creative.image_prompt,
-                                "negative_prompt": creative.image_negative_prompt,
-                                "method": "text_to_image",
-                                "image_type": "base_generated"
-                            }
-                            assets["images"].append(base_image_asset)
-                            logger.info(f"Base AI-generated image saved for {product.name}: {base_filename}")
-                            
-                            # Check if virtual try-on enhancement is enabled
-                            if template.use_virtual_try_on and product_image:
-                                logger.info(f"Applying virtual try-on enhancement for {product.name}")
-                                try:
-                                    # Load the generated image
-                                    generated_image = Image.open(image_result)
-                                    
-                                    # Get VTO category for the product
-                                    vto_category = get_vto_category(product.category)
-                                    
-                                    # Apply virtual try-on enhancement
-                                    enhanced_image = enhance_dpa_with_try_on(
-                                        base_image=generated_image,
-                                        product_image=product_image,
-                                        product_category=vto_category,
-                                        enhancement_type=template.vto_enhancement_type
-                                    )
-                                    
-                                    if enhanced_image:
-                                        # Save enhanced image with clear naming
-                                        enhanced_filename = f"dpa_vto_{product.product_id}_{validated_width}x{validated_height}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
-                                        enhanced_path = output_dir / enhanced_filename
-                                        enhanced_image.save(enhanced_path)
+                                # Copy to scene-specific filename
+                                output_dir = Path(self.config["output_directory"])
+                                scene_path = output_dir / scene_filename
+                                
+                                # Copy the generated image to scene-specific path
+                                import shutil
+                                shutil.copy2(image_result, scene_path)
+                                
+                                # Upload scene image to S3
+                                scene_s3_key = f"dpa_generated/{scene_filename}"
+                                scene_s3_url = self._upload_to_s3(str(scene_path), scene_s3_key)
+                                
+                                # Add scene image to assets
+                                scene_image_asset = {
+                                    "size": f"{validated_width}x{validated_height}",
+                                    "local_path": str(scene_path),
+                                    "s3_url": scene_s3_url,
+                                    "prompt": scene_prompt,
+                                    "negative_prompt": creative.image_negative_prompt,
+                                    "method": "text_to_image",
+                                    "image_type": "scene_generated",
+                                    "scene_name": scene_name,
+                                    "scene_index": scene_idx + 1,
+                                    "total_scenes": len(scene_prompts)
+                                }
+                                assets["images"].append(scene_image_asset)
+                                
+                                logger.info(f"✅ Scene {scene_idx + 1} generated: {scene_name}")
+                                
+                                # Check if virtual try-on enhancement is enabled for this scene
+                                if template.use_virtual_try_on and product_image:
+                                    logger.info(f"🎭 Applying VTO enhancement to scene: {scene_name}")
+                                    try:
+                                        # Load the generated scene image
+                                        generated_scene_image = Image.open(scene_path)
                                         
-                                        # Upload enhanced image to S3
-                                        enhanced_s3_key = f"dpa_generated/{enhanced_filename}"
-                                        enhanced_s3_url = self._upload_to_s3(str(enhanced_path), enhanced_s3_key)
+                                        # Get VTO category for the product
+                                        vto_category = get_vto_category(product.category)
                                         
-                                        # Add enhanced image to assets
-                                        enhanced_image_asset = {
-                                            "size": f"{validated_width}x{validated_height}",
-                                            "local_path": str(enhanced_path),
-                                            "s3_url": enhanced_s3_url,
-                                            "prompt": creative.image_prompt,
-                                            "negative_prompt": creative.image_negative_prompt,
-                                            "method": "text_to_image_with_vto",
-                                            "image_type": "vto_enhanced",
-                                            "enhancement": "virtual_try_on",
-                                            "vto_category": vto_category,
-                                            "base_image_path": image_result  # Reference to original
-                                        }
-                                        assets["images"].append(enhanced_image_asset)
+                                        # Apply virtual try-on enhancement with AI mask prompts
+                                        ai_mask_prompt = None
+                                        if hasattr(creative, 'ai_analysis') and creative.ai_analysis:
+                                            mask_prompts = creative.ai_analysis.get('mask_prompts', [])
+                                            if mask_prompts:
+                                                ai_mask_prompt = mask_prompts[0]
+                                                logger.info(f"🎯 Using AI mask prompt: {ai_mask_prompt}")
                                         
-                                        logger.info(f"VTO-enhanced image saved for {product.name}: {enhanced_filename}")
+                                        enhanced_scene_image = self._enhance_with_ai_vto(
+                                            base_image=generated_scene_image,
+                                            product_image=product_image,
+                                            product_category=vto_category,
+                                            enhancement_type=template.vto_enhancement_type,
+                                            ai_mask_prompt=ai_mask_prompt
+                                        )
                                         
-                                        # Update metadata to indicate both versions available
-                                        assets["metadata"]["has_vto_enhancement"] = True
-                                        assets["metadata"]["vto_category"] = vto_category
-                                        assets["metadata"]["total_image_variants"] = len([img for img in assets["images"] if img.get("method", "").startswith("text_to_image")])
-                                        
-                                    else:
-                                        logger.warning(f"Virtual try-on enhancement failed for {product.name}, only base image available")
-                                        assets["metadata"]["vto_enhancement_failed"] = True
-                                        
-                                except Exception as e:
-                                    logger.error(f"Virtual try-on enhancement error for {product.name}: {e}")
-                                    assets["metadata"]["vto_enhancement_error"] = str(e)
+                                        if enhanced_scene_image:
+                                            # Save VTO-enhanced scene image
+                                            clean_scene_name = self._clean_filename(scene_name)
+                                            vto_scene_filename = f"dpa_vto_{product.product_id}_{clean_scene_name}_{validated_width}x{validated_height}_{timestamp}.png"
+                                            vto_scene_path = output_dir / vto_scene_filename
+                                            enhanced_scene_image.save(vto_scene_path)
+                                            
+                                            # Upload VTO scene image to S3
+                                            vto_scene_s3_key = f"dpa_generated/{vto_scene_filename}"
+                                            vto_scene_s3_url = self._upload_to_s3(str(vto_scene_path), vto_scene_s3_key)
+                                            
+                                            # Add VTO scene image to assets
+                                            vto_scene_asset = {
+                                                "size": f"{validated_width}x{validated_height}",
+                                                "local_path": str(vto_scene_path),
+                                                "s3_url": vto_scene_s3_url,
+                                                "prompt": scene_prompt,
+                                                "negative_prompt": creative.image_negative_prompt,
+                                                "method": "text_to_image_with_vto",
+                                                "image_type": "vto_scene_enhanced",
+                                                "scene_name": scene_name,
+                                                "scene_index": scene_idx + 1,
+                                                "total_scenes": len(scene_prompts),
+                                                "enhancement": "virtual_try_on",
+                                                "vto_category": vto_category,
+                                                "base_scene_path": str(scene_path)
+                                            }
+                                            assets["images"].append(vto_scene_asset)
+                                            
+                                            logger.info(f"✅ VTO scene {scene_idx + 1} enhanced: {scene_name}")
+                                        else:
+                                            logger.warning(f"⚠️ VTO enhancement failed for scene: {scene_name}")
+                                            
+                                    except Exception as e:
+                                        logger.error(f"❌ VTO enhancement error for scene {scene_name}: {e}")
                             else:
-                                if template.use_virtual_try_on:
-                                    logger.info(f"VTO enabled but no product image available for {product.name}")
-                                    assets["metadata"]["vto_skipped_reason"] = "no_product_image"
+                                logger.warning(f"⚠️ Failed to generate scene {scene_idx + 1}: {scene_name}")
+                        
+                        # Update metadata with scene information
+                        assets["metadata"]["total_scenes"] = len(scene_prompts)
+                        assets["metadata"]["scene_names"] = scene_names
+                        if hasattr(creative, 'ai_analysis') and creative.ai_analysis:
+                            assets["metadata"]["has_ai_analysis"] = True
+                            assets["metadata"]["ai_background_scenes"] = len(scene_prompts)
             
             # Generate videos (unchanged for now)
             if creative.ad_format in ["video", "carousel"]:

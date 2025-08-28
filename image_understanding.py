@@ -389,6 +389,149 @@ class DPAImageAnalyzer:
         
         specific_negative = category_specific.get(product_category.lower(), category_specific["default"])
         return base_negative + specific_negative
+    
+    def score_image_from_path_or_url(self, image_source: str, product_info: Dict[str, Any] = None) -> Dict[str, Any]:
+        """
+        Score an image from either local path or S3 URL.
+        
+        Args:
+            image_source: Local file path or S3 URL (s3://bucket/key) or HTTPS URL
+            product_info: Optional product information
+            
+        Returns:
+            Comprehensive scoring results from both models
+        """
+        try:
+            # Validate input
+            if not image_source or image_source == 'None' or not isinstance(image_source, str):
+                logger.error(f"Invalid image source provided: {image_source}")
+                return {
+                    "success": False,
+                    "error": f"Invalid image source: {image_source}",
+                    "source": image_source
+                }
+            
+            from PIL import Image
+            from io import BytesIO
+            
+            # Handle different types of image sources
+            if image_source.startswith('s3://'):
+                # S3 URL - generate presigned URL and download
+                logger.info(f"Processing S3 URL: {image_source}")
+                
+                try:
+                    import boto3
+                    s3_client = boto3.client('s3')
+                    
+                    # Parse S3 URL
+                    s3_parts = image_source.replace('s3://', '').split('/', 1)
+                    if len(s3_parts) != 2:
+                        return {
+                            "success": False,
+                            "error": f"Invalid S3 URL format: {image_source}",
+                            "source": image_source
+                        }
+                    
+                    bucket_name, s3_key = s3_parts
+                    
+                    # Generate presigned URL (valid for 1 hour)
+                    presigned_url = s3_client.generate_presigned_url(
+                        'get_object',
+                        Params={'Bucket': bucket_name, 'Key': s3_key},
+                        ExpiresIn=3600
+                    )
+                    
+                    # Download from presigned URL
+                    import requests
+                    response = requests.get(presigned_url, timeout=30)
+                    response.raise_for_status()
+                    
+                    image = Image.open(BytesIO(response.content))
+                    logger.info(f"Successfully loaded image from S3: {image.size}")
+                    
+                except Exception as e:
+                    logger.error(f"Failed to load from S3 URL: {e}")
+                    return {
+                        "success": False,
+                        "error": f"Failed to load from S3: {str(e)}",
+                        "source": image_source
+                    }
+            
+            elif image_source.startswith(('http://', 'https://')):
+                # HTTP/HTTPS URL - download directly
+                logger.info(f"Processing HTTP URL: {image_source}")
+                
+                try:
+                    import requests
+                    response = requests.get(image_source, timeout=30)
+                    response.raise_for_status()
+                    
+                    image = Image.open(BytesIO(response.content))
+                    logger.info(f"Successfully loaded image from URL: {image.size}")
+                    
+                except Exception as e:
+                    logger.error(f"Failed to load from URL: {e}")
+                    return {
+                        "success": False,
+                        "error": f"Failed to load from URL: {str(e)}",
+                        "source": image_source
+                    }
+            
+            else:
+                # Assume it's a local file path
+                logger.info(f"Processing local file: {image_source}")
+                
+                try:
+                    if not os.path.exists(image_source):
+                        return {
+                            "success": False,
+                            "error": f"Local file not found: {image_source}",
+                            "source": image_source
+                        }
+                    
+                    image = Image.open(image_source)
+                    logger.info(f"Successfully loaded local image: {image.size}")
+                    
+                except Exception as e:
+                    logger.error(f"Failed to load local file: {e}")
+                    return {
+                        "success": False,
+                        "error": f"Failed to load local file: {str(e)}",
+                        "source": image_source
+                    }
+            
+            # Use the existing scoring system
+            scorer = AdImageScorer()
+            scoring_results = scorer.score_advertisement_image(image, product_info)
+            
+            # Add metadata about the source
+            scoring_results['source'] = image_source
+            scoring_results['image_size'] = image.size
+            
+            return scoring_results
+            
+        except Exception as e:
+            logger.error(f"Error scoring image from {image_source}: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "source": image_source
+            }
+            
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error downloading image from URL {s3_url}: {e}")
+            return {
+                "success": False,
+                "error": f"Failed to download image: {str(e)}",
+                "s3_url": s3_url
+            }
+        except Exception as e:
+            logger.error(f"Error scoring image from URL {s3_url}: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "s3_url": s3_url
+            }
 
 # Integration functions for DPA
 
@@ -448,3 +591,420 @@ def _map_to_vto_category(product_category: str) -> str:
     }
     
     return mapping.get(product_category.lower(), "UPPER_BODY")
+
+
+class AdImageScorer:
+    """Score generated advertisement images using multiple AI models"""
+    
+    def __init__(self, region_name: str = "us-east-1"):
+        """Initialize the ad image scorer with AWS Bedrock client."""
+        self.bedrock = boto3.client(service_name="bedrock-runtime", region_name=region_name)
+        self.claude_model_id = "us.anthropic.claude-sonnet-4-20250514-v1:0"
+        self.nova_model_id = "us.amazon.nova-pro-v1:0"
+    
+    def _image_to_base64(self, image_input) -> str:
+        """Convert various image inputs to base64 string."""
+        if isinstance(image_input, str):
+            # It's a file path
+            with open(image_input, "rb") as img_file:
+                image_bytes = img_file.read()
+        elif hasattr(image_input, 'save'):
+            # It's a PIL Image
+            buffer = BytesIO()
+            image_input.save(buffer, format='PNG')
+            image_bytes = buffer.getvalue()
+        else:
+            # It's an uploaded file or bytes
+            if hasattr(image_input, 'getvalue'):
+                image_bytes = image_input.getvalue()
+            else:
+                image_bytes = image_input
+        
+        return base64.b64encode(image_bytes).decode('utf-8')
+    
+    def _create_scoring_prompt(self, product_info: Dict[str, Any] = None) -> str:
+        """Create prompt for scoring advertisement images."""
+        
+        product_context = ""
+        if product_info:
+            product_context = f"""
+Product Context:
+- Name: {product_info.get('name', 'Unknown')}
+- Category: {product_info.get('category', 'Unknown')}
+- Description: {product_info.get('description', 'N/A')}
+"""
+        
+        return f"""
+You are an expert advertising and visual marketing analyst. Please evaluate this advertisement image across multiple dimensions and provide a comprehensive score.
+
+{product_context}
+
+Please analyze the image and provide scores (1-10 scale) for the following criteria:
+
+**VISUAL QUALITY (1-10)**
+- Image clarity and resolution
+- Color balance and saturation
+- Lighting and composition
+- Overall visual appeal
+
+**PRODUCT PRESENTATION (1-10)**
+- Product visibility and prominence
+- Product positioning and angle
+- Product integration with background
+- Brand/product recognition clarity
+
+**ADVERTISING EFFECTIVENESS (1-10)**
+- Eye-catching and attention-grabbing
+- Emotional appeal and engagement
+- Target audience appropriateness
+- Call-to-action potential
+
+**TECHNICAL EXECUTION (1-10)**
+- Background integration quality
+- Realistic lighting and shadows
+- Absence of artifacts or distortions
+- Professional finish quality
+
+**IMAGE HARMONY (1-10)**
+- Visual balance and composition harmony
+- Color scheme coherence and consistency
+- Element proportions and spatial relationships
+- Overall aesthetic unity and flow
+
+**IMAGE RATIONALITY (1-10)**
+- Logical scene composition and context
+- Absence of unrealistic or impossible elements
+- Appropriate object placement and physics
+- No unwanted or out-of-place artifacts
+
+**OVERALL COMMERCIAL APPEAL (1-10)**
+- Would this drive purchase intent?
+- Suitable for e-commerce platforms?
+- Competitive advantage potential
+- Brand image enhancement
+
+Please respond in the following JSON format:
+{{
+    "visual_quality": {{
+        "score": X,
+        "feedback": "Detailed explanation..."
+    }},
+    "product_presentation": {{
+        "score": X,
+        "feedback": "Detailed explanation..."
+    }},
+    "advertising_effectiveness": {{
+        "score": X,
+        "feedback": "Detailed explanation..."
+    }},
+    "technical_execution": {{
+        "score": X,
+        "feedback": "Detailed explanation..."
+    }},
+    "image_harmony": {{
+        "score": X,
+        "feedback": "Detailed explanation..."
+    }},
+    "image_rationality": {{
+        "score": X,
+        "feedback": "Detailed explanation..."
+    }},
+    "overall_commercial_appeal": {{
+        "score": X,
+        "feedback": "Detailed explanation..."
+    }},
+    "total_score": X,
+    "strengths": ["strength1", "strength2", "strength3"],
+    "improvements": ["improvement1", "improvement2", "improvement3"],
+    "summary": "Overall assessment in 2-3 sentences"
+}}
+
+Provide honest, constructive feedback that would help improve future ad generation.
+"""
+    
+    def score_with_claude(self, image_input, product_info: Dict[str, Any] = None) -> Dict[str, Any]:
+        """Score advertisement image using Claude Sonnet 4."""
+        try:
+            image_b64 = self._image_to_base64(image_input)
+            prompt = self._create_scoring_prompt(product_info)
+            
+            request_body = {
+                "anthropic_version": "bedrock-2023-05-31",
+                "max_tokens": 2000,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "image",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": "image/png",
+                                    "data": image_b64
+                                }
+                            },
+                            {
+                                "type": "text",
+                                "text": prompt
+                            }
+                        ]
+                    }
+                ]
+            }
+            
+            response = self.bedrock.invoke_model(
+                body=json.dumps(request_body),
+                modelId=self.claude_model_id,
+                accept="application/json",
+                contentType="application/json"
+            )
+            
+            response_body = json.loads(response.get("body").read())
+            raw_response = response_body.get("content", [{}])[0].get("text", "")
+            
+            # Parse JSON response
+            try:
+                # Extract JSON from response (handle potential markdown formatting)
+                json_start = raw_response.find('{')
+                json_end = raw_response.rfind('}') + 1
+                if json_start != -1 and json_end != -1:
+                    json_str = raw_response[json_start:json_end]
+                    parsed_score = json.loads(json_str)
+                else:
+                    raise ValueError("No JSON found in response")
+            except (json.JSONDecodeError, ValueError) as e:
+                logger.warning(f"Failed to parse Claude JSON response: {e}")
+                # Fallback: create basic structure
+                parsed_score = {
+                    "visual_quality": {"score": 7, "feedback": "Unable to parse detailed feedback"},
+                    "product_presentation": {"score": 7, "feedback": "Unable to parse detailed feedback"},
+                    "advertising_effectiveness": {"score": 7, "feedback": "Unable to parse detailed feedback"},
+                    "technical_execution": {"score": 7, "feedback": "Unable to parse detailed feedback"},
+                    "overall_commercial_appeal": {"score": 7, "feedback": "Unable to parse detailed feedback"},
+                    "total_score": 35,
+                    "strengths": ["Analysis available in raw response"],
+                    "improvements": ["Check raw response for details"],
+                    "summary": "Detailed analysis available in raw response"
+                }
+            
+            return {
+                "success": True,
+                "model": "Claude Sonnet 4",
+                "model_id": self.claude_model_id,
+                "scores": parsed_score,
+                "raw_response": raw_response
+            }
+            
+        except Exception as e:
+            logger.error(f"Error scoring with Claude: {e}")
+            return {
+                "success": False,
+                "model": "Claude Sonnet 4",
+                "error": str(e)
+            }
+    
+    def score_with_nova(self, image_input, product_info: Dict[str, Any] = None) -> Dict[str, Any]:
+        """Score advertisement image using Amazon Nova Pro."""
+        try:
+            image_b64 = self._image_to_base64(image_input)
+            prompt = self._create_scoring_prompt(product_info)
+            
+            request_body = {
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "image": {
+                                    "format": "png",
+                                    "source": {
+                                        "bytes": image_b64
+                                    }
+                                }
+                            },
+                            {
+                                "text": prompt
+                            }
+                        ]
+                    }
+                ],
+                "inferenceConfig": {
+                    "max_new_tokens": 2000,
+                    "temperature": 0.1
+                }
+            }
+            
+            response = self.bedrock.invoke_model(
+                body=json.dumps(request_body),
+                modelId=self.nova_model_id,
+                accept="application/json",
+                contentType="application/json"
+            )
+            
+            response_body = json.loads(response.get("body").read())
+            raw_response = response_body.get("output", {}).get("message", {}).get("content", [{}])[0].get("text", "")
+            
+            # Parse JSON response
+            try:
+                # Extract JSON from response (handle potential markdown formatting)
+                json_start = raw_response.find('{')
+                json_end = raw_response.rfind('}') + 1
+                if json_start != -1 and json_end != -1:
+                    json_str = raw_response[json_start:json_end]
+                    parsed_score = json.loads(json_str)
+                else:
+                    raise ValueError("No JSON found in response")
+            except (json.JSONDecodeError, ValueError) as e:
+                logger.warning(f"Failed to parse Nova JSON response: {e}")
+                # Fallback: create basic structure
+                parsed_score = {
+                    "visual_quality": {"score": 7, "feedback": "Unable to parse detailed feedback"},
+                    "product_presentation": {"score": 7, "feedback": "Unable to parse detailed feedback"},
+                    "advertising_effectiveness": {"score": 7, "feedback": "Unable to parse detailed feedback"},
+                    "technical_execution": {"score": 7, "feedback": "Unable to parse detailed feedback"},
+                    "overall_commercial_appeal": {"score": 7, "feedback": "Unable to parse detailed feedback"},
+                    "total_score": 35,
+                    "strengths": ["Analysis available in raw response"],
+                    "improvements": ["Check raw response for details"],
+                    "summary": "Detailed analysis available in raw response"
+                }
+            
+            return {
+                "success": True,
+                "model": "Amazon Nova Pro",
+                "model_id": self.nova_model_id,
+                "scores": parsed_score,
+                "raw_response": raw_response
+            }
+            
+        except Exception as e:
+            logger.error(f"Error scoring with Nova: {e}")
+            return {
+                "success": False,
+                "model": "Amazon Nova Pro",
+                "error": str(e)
+            }
+    
+    def score_advertisement_image(self, image_input, product_info: Dict[str, Any] = None) -> Dict[str, Any]:
+        """Score advertisement image using both Claude and Nova models."""
+        logger.info("🎯 Starting advertisement image scoring with dual models...")
+        
+        results = {
+            "timestamp": "2025-08-26T14:23:06.523Z",
+            "product_info": product_info or {},
+            "claude_results": {},
+            "nova_results": {},
+            "comparison": {}
+        }
+        
+        # Score with Claude Sonnet 4
+        logger.info("📊 Scoring with Claude Sonnet 4...")
+        claude_results = self.score_with_claude(image_input, product_info)
+        results["claude_results"] = claude_results
+        
+        # Score with Nova Pro
+        logger.info("📊 Scoring with Amazon Nova Pro...")
+        nova_results = self.score_with_nova(image_input, product_info)
+        results["nova_results"] = nova_results
+        
+        # Create comparison if both succeeded
+        if claude_results.get("success") and nova_results.get("success"):
+            results["comparison"] = self._compare_scores(claude_results, nova_results)
+        
+        logger.info("✅ Advertisement image scoring completed")
+        return results
+    
+    def _compare_scores(self, claude_results: Dict, nova_results: Dict) -> Dict[str, Any]:
+        """Compare scores from both models."""
+        claude_scores = claude_results.get("scores", {})
+        nova_scores = nova_results.get("scores", {})
+        
+        comparison = {
+            "score_differences": {},
+            "agreement_level": "unknown",
+            "consensus_strengths": [],
+            "consensus_improvements": [],
+            "model_preferences": {}
+        }
+        
+        # Compare individual scores
+        score_categories = ["visual_quality", "product_presentation", "advertising_effectiveness", 
+                          "technical_execution", "image_harmony", "image_rationality",
+                          "overall_commercial_appeal"]
+        
+        total_diff = 0
+        valid_comparisons = 0
+        
+        for category in score_categories:
+            claude_score = claude_scores.get(category, {}).get("score", 0)
+            nova_score = nova_scores.get(category, {}).get("score", 0)
+            
+            if claude_score and nova_score:
+                diff = abs(claude_score - nova_score)
+                comparison["score_differences"][category] = {
+                    "claude": claude_score,
+                    "nova": nova_score,
+                    "difference": diff,
+                    "higher_scorer": "Claude" if claude_score > nova_score else "Nova" if nova_score > claude_score else "Tie"
+                }
+                total_diff += diff
+                valid_comparisons += 1
+        
+        # Calculate agreement level
+        if valid_comparisons > 0:
+            avg_diff = total_diff / valid_comparisons
+            if avg_diff <= 1:
+                comparison["agreement_level"] = "High Agreement"
+            elif avg_diff <= 2:
+                comparison["agreement_level"] = "Moderate Agreement"
+            else:
+                comparison["agreement_level"] = "Low Agreement"
+        
+        # Find consensus strengths and improvements
+        claude_strengths = set(claude_scores.get("strengths", []))
+        nova_strengths = set(nova_scores.get("strengths", []))
+        comparison["consensus_strengths"] = list(claude_strengths.intersection(nova_strengths))
+        
+        claude_improvements = set(claude_scores.get("improvements", []))
+        nova_improvements = set(nova_scores.get("improvements", []))
+        comparison["consensus_improvements"] = list(claude_improvements.intersection(nova_improvements))
+        
+        # Calculate overall totals by summing individual category scores
+        def calculate_total_score(scores_dict):
+            """Calculate total score by summing individual category scores"""
+            categories = ["visual_quality", "product_presentation", "advertising_effectiveness", 
+                         "technical_execution", "image_harmony", "image_rationality", 
+                         "overall_commercial_appeal"]
+            total = 0
+            for category in categories:
+                if category in scores_dict:
+                    score = scores_dict[category].get("score", 0)
+                    total += score
+            return total
+        
+        claude_total = calculate_total_score(claude_scores)
+        nova_total = calculate_total_score(nova_scores)
+        
+        comparison["total_scores"] = {
+            "claude": claude_total,
+            "nova": nova_total,
+            "average": (claude_total + nova_total) / 2 if claude_total and nova_total else 0,
+            "difference": abs(claude_total - nova_total) if claude_total and nova_total else 0
+        }
+        
+        return comparison
+
+
+def score_advertisement_image(image_input, product_info: Dict[str, Any] = None) -> Dict[str, Any]:
+    """
+    Score an advertisement image using both Claude Sonnet 4 and Amazon Nova Pro.
+    
+    Args:
+        image_input: Advertisement image (PIL Image, path, or uploaded file)
+        product_info: Product information (name, category, description, etc.)
+        
+    Returns:
+        Comprehensive scoring results from both models with comparison
+    """
+    scorer = AdImageScorer()
+    return scorer.score_advertisement_image(image_input, product_info)

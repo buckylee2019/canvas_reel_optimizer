@@ -210,14 +210,14 @@ def generate_image_pair(original_prompt, optimized_prompt, negative_prompt="", q
 @retry_with_backoff(max_retries=3, base_delay=1.0)
 def generate_single_image(prompt, negative_prompt="", quality="standard", num_images=1, height=720, width=1280, seed=0, cfg_scale=6.5):
     """Generate image using Nova Canvas model with retry logic"""
+    # Prepare text-to-image parameters
+    text_params = {"text": prompt}
+    if negative_prompt and negative_prompt.strip():  # Only add if not empty
+        text_params["negativeText"] = negative_prompt
+    
     body = json.dumps({
         "taskType": "TEXT_IMAGE",
-        "textToImageParams": {
-            "text": prompt,
-            "negativeText": negative_prompt
-        } if negative_prompt else {
-             "text": prompt
-        },
+        "textToImageParams": text_params,
         "imageGenerationConfig": {
             "numberOfImages": int(num_images),  # Ensure integer
             "height": int(height),

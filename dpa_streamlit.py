@@ -487,155 +487,6 @@ def render_template_designer():
                 disabled=not use_virtual_try_on
             )
             
-            # AI Image Analysis Section
-            st.markdown("### 🧠 AI Image Analysis & Suggestions")
-            st.info("💡 Upload a sample product image to get AI-powered suggestions for better templates")
-            
-            sample_product_image = st.file_uploader(
-                "Upload Sample Product Image",
-                type=['png', 'jpg', 'jpeg'],
-                help="Upload a representative product image to get AI suggestions for mask prompts, backgrounds, and VTO settings"
-            )
-            
-            if sample_product_image is not None:
-                # Display uploaded image
-                col_img, col_analysis = st.columns([1, 2])
-                
-                with col_img:
-                    st.image(sample_product_image, caption="Sample Product", use_container_width=True)
-                
-                with col_analysis:
-                    # Product category for analysis
-                    analysis_category = st.selectbox(
-                        "Product Category",
-                        options=["shirt", "dress", "jeans", "jacket", "watch", "jewelry", "bag", "shoes", "phone", "laptop", "headphones", "other"],
-                        help="Select the product category for more accurate AI analysis"
-                    )
-                    
-                    # Analysis buttons
-                    col_btn1, col_btn2, col_btn3 = st.columns(3)
-                    
-                    with col_btn1:
-                        if st.button("🎯 Analyze Masks", help="Get AI suggestions for VTO mask prompts"):
-                            with st.spinner("Analyzing image for mask suggestions..."):
-                                try:
-                                    analyzer = DPAImageAnalyzer()
-                                    result = analyzer.analyze_product_image(
-                                        sample_product_image,
-                                        analysis_category,
-                                        analysis_type="mask"
-                                    )
-                                    
-                                    if result["success"]:
-                                        st.session_state.ai_mask_suggestions = result.get("mask_prompts", [])
-                                        st.success(f"✅ Found {len(st.session_state.ai_mask_suggestions)} mask suggestions!")
-                                    else:
-                                        st.error(f"❌ Analysis failed: {result.get('error', 'Unknown error')}")
-                                except Exception as e:
-                                    st.error(f"❌ Error: {e}")
-                    
-                    with col_btn2:
-                        if st.button("🎨 Analyze Backgrounds", help="Get AI suggestions for background scenes"):
-                            with st.spinner("Analyzing image for background suggestions..."):
-                                try:
-                                    analyzer = DPAImageAnalyzer()
-                                    result = analyzer.analyze_product_image(
-                                        sample_product_image,
-                                        analysis_category,
-                                        analysis_type="background"
-                                    )
-                                    
-                                    if result["success"]:
-                                        st.session_state.ai_background_suggestions = result.get("background_suggestions", [])
-                                        st.success(f"✅ Found {len(st.session_state.ai_background_suggestions)} background suggestions!")
-                                    else:
-                                        st.error(f"❌ Analysis failed: {result.get('error', 'Unknown error')}")
-                                except Exception as e:
-                                    st.error(f"❌ Error: {e}")
-                    
-                    with col_btn3:
-                        if st.button("🚀 Full Analysis", help="Get comprehensive AI analysis"):
-                            with st.spinner("Performing comprehensive AI analysis..."):
-                                try:
-                                    analyzer = DPAImageAnalyzer()
-                                    result = analyzer.analyze_product_image(
-                                        sample_product_image,
-                                        analysis_category,
-                                        analysis_type="comprehensive"
-                                    )
-                                    
-                                    if result["success"]:
-                                        st.session_state.ai_comprehensive_analysis = result
-                                        st.success("✅ Comprehensive analysis complete!")
-                                    else:
-                                        st.error(f"❌ Analysis failed: {result.get('error', 'Unknown error')}")
-                                except Exception as e:
-                                    st.error(f"❌ Error: {e}")
-                
-                # Display AI suggestions
-                if hasattr(st.session_state, 'ai_mask_suggestions') and st.session_state.ai_mask_suggestions:
-                    st.markdown("#### 🎯 AI Mask Suggestions")
-                    for i, suggestion in enumerate(st.session_state.ai_mask_suggestions):
-                        if st.button(f"Use: {suggestion}", key=f"mask_{i}"):
-                            # This would be used in VTO mask prompts
-                            st.info(f"Mask suggestion selected: {suggestion}")
-                
-                if hasattr(st.session_state, 'ai_background_suggestions') and st.session_state.ai_background_suggestions:
-                    st.markdown("#### 🎨 AI Background Suggestions")
-                    for i, suggestion in enumerate(st.session_state.ai_background_suggestions):
-                        if st.button(f"Use: {suggestion}", key=f"bg_{i}"):
-                            # Update image style with this suggestion
-                            st.session_state.suggested_image_style = suggestion
-                            st.success(f"Background suggestion applied to image style!")
-                
-                if hasattr(st.session_state, 'ai_comprehensive_analysis') and st.session_state.ai_comprehensive_analysis:
-                    analysis = st.session_state.ai_comprehensive_analysis
-                    
-                    st.markdown("#### 🧠 Comprehensive AI Analysis")
-                    
-                    # Product Analysis
-                    if 'product_analysis' in analysis:
-                        with st.expander("📊 Product Analysis"):
-                            for item in analysis['product_analysis']:
-                                st.write(f"• {item}")
-                    
-                    # VTO Recommendations
-                    if 'vto_recommendations' in analysis:
-                        with st.expander("🎭 VTO Recommendations"):
-                            for item in analysis['vto_recommendations']:
-                                st.write(f"• {item}")
-                    
-                    # Mask Prompts
-                    if 'mask_prompts' in analysis:
-                        with st.expander("🎯 Suggested Mask Prompts"):
-                            for item in analysis['mask_prompts']:
-                                st.write(f"• {item}")
-                    
-                    # Background Suggestions
-                    if 'background_suggestions' in analysis:
-                        with st.expander("🎨 Background Scene Suggestions"):
-                            for item in analysis['background_suggestions']:
-                                st.write(f"• {item}")
-                    
-                    # Image Generation Tips
-                    if 'image_generation_tips' in analysis:
-                        with st.expander("💡 Image Generation Tips"):
-                            for item in analysis['image_generation_tips']:
-                                st.write(f"• {item}")
-                    
-                    # Apply suggestions button
-                    if st.button("🚀 Apply AI Suggestions to Template", type="primary"):
-                        # Auto-fill template fields with AI suggestions
-                        if 'background_suggestions' in analysis and analysis['background_suggestions']:
-                            st.session_state.suggested_image_style = analysis['background_suggestions'][0]
-                        
-                        # Set VTO settings based on analysis
-                        if 'vto_recommendations' in analysis:
-                            st.session_state.suggested_vto_enabled = True
-                        
-                        st.success("🎉 AI suggestions applied! Scroll up to see updated template fields.")
-                        st.rerun()
-            
             submitted = st.form_submit_button("💾 Save Template")
             
             if submitted and template_id and name:
@@ -891,8 +742,11 @@ def render_batch_processing():
                     if enable_optimization:
                         creative = st.session_state.dpa_automator.optimize_creative(creative, product)
                     
-                    # Generate assets
-                    assets = st.session_state.dpa_automator.generate_ad_assets(product, creative, template)
+                    # Generate assets with progress callback
+                    def progress_callback(message):
+                        status_text.text(f"🔄 Processing {idx + 1}/{total_products}: {product.name} - {message}")
+                    
+                    assets = st.session_state.dpa_automator.generate_ad_assets(product, creative, template, progress_callback)
                     
                     result = {
                         "success": True,
@@ -1010,11 +864,44 @@ def render_analytics():
     """Render analytics dashboard with generated images"""
     st.title("📈 Analytics Dashboard")
     
-    if not st.session_state.processed_results:
-        st.info("No processed results available. Run batch processing first.")
-        return
+    # Try to load results from session state first, then from JSON files
+    results = None
     
-    results = st.session_state.processed_results
+    if st.session_state.processed_results:
+        results = st.session_state.processed_results
+        st.info("📊 Showing results from current session")
+    else:
+        # Try to load from JSON files
+        results_dir = Path("generated_ads")
+        json_files = list(results_dir.glob("dpa_results_*.json"))
+        
+        if json_files:
+            # Use the most recent JSON file
+            latest_json = max(json_files, key=lambda x: x.stat().st_mtime)
+            
+            try:
+                with open(latest_json, 'r') as f:
+                    data = json.load(f)
+                results = data.get('results', [])
+                
+                if results:
+                    st.info(f"📁 Loaded results from: {latest_json.name} ({len(results)} products)")
+                else:
+                    st.warning(f"📁 JSON file {latest_json.name} contains no results")
+            except Exception as e:
+                st.error(f"❌ Error loading {latest_json.name}: {e}")
+        
+        if not results:
+            st.info("No processed results available. Run batch processing first or check for JSON result files in generated_ads/")
+            
+            # Show available JSON files for debugging
+            if json_files:
+                with st.expander("🔍 Available Result Files"):
+                    for json_file in sorted(json_files, key=lambda x: x.stat().st_mtime, reverse=True):
+                        file_size = json_file.stat().st_size
+                        mod_time = json_file.stat().st_mtime
+                        st.write(f"• {json_file.name} ({file_size:,} bytes, modified: {mod_time})")
+            return
     
     # Overview metrics
     col1, col2, col3, col4 = st.columns(4)
@@ -1082,7 +969,7 @@ def render_analytics():
         st.info("🔗 **Download Links**: Presigned URLs are generated for S3 images and expire in 24 hours for security.")
     
     # Filter and display options
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4, col5 = st.columns(5)
     
     with col1:
         # Category filter
@@ -1090,6 +977,11 @@ def render_analytics():
         selected_category = st.selectbox("Filter by Category:", ["All"] + all_categories)
     
     with col2:
+        # Product ID filter
+        all_product_ids = list(set(r.get('product', {}).get('product_id', 'Unknown') for r in results))
+        selected_product_id = st.selectbox("Filter by Product ID:", ["All"] + sorted(all_product_ids))
+    
+    with col3:
         # Generation method filter
         all_methods = list(set(
             img.get('method', 'unknown') 
@@ -1098,17 +990,17 @@ def render_analytics():
         ))
         selected_method = st.selectbox("Filter by Method:", ["All"] + all_methods)
     
-    with col3:
+    with col4:
         # VTO comparison view
-        show_vto_comparison = st.checkbox("Show VTO Comparison", value=True, 
+        show_vto_comparison = st.checkbox("Show VTO Comparison", value=False, 
                                          help="Show base and VTO-enhanced images side by side")
     
-    with col4:
-        # Images per row (only when not in comparison mode)
-        if not show_vto_comparison:
-            images_per_row = st.slider("Images per row:", 2, 6, 3)
-        else:
-            images_per_row = 2  # Fixed for comparison mode
+    with col5:
+        # Images per row
+        images_per_row = st.slider("Images per row:", 1, 6, 3)
+        if show_vto_comparison and images_per_row < 2:
+            st.warning("VTO comparison requires at least 2 columns")
+            images_per_row = 2
     
     # Group images by product for VTO comparison
     if show_vto_comparison:
@@ -1120,6 +1012,10 @@ def render_analytics():
             
             # Apply category filter
             if selected_category != "All" and product.get('category') != selected_category:
+                continue
+            
+            # Apply product ID filter
+            if selected_product_id != "All" and product.get('product_id') != selected_product_id:
                 continue
             
             # Group images by scene
@@ -1303,248 +1199,441 @@ def render_analytics():
     else:
         # Regular gallery view
         st.markdown("### 🖼️ All Generated Images")
-    
-    # Collect all images with metadata
-    all_images = []
-    for result in results:
-        product = result.get('product', {})
-        assets = result.get('assets', {})
         
-        # Apply category filter
-        if selected_category != "All" and product.get('category') != selected_category:
-            continue
+        # Collect all images with metadata
+        all_images = []
+        seen_images = set()  # Track unique images to avoid duplicates
         
-        for img in assets.get('images', []):
-            # Apply method filter
-            if selected_method != "All" and img.get('method') != selected_method:
+        for result in results:
+            product = result.get('product', {})
+            assets = result.get('assets', {})
+            
+            # Apply category filter
+            if selected_category != "All" and product.get('category') != selected_category:
                 continue
             
-            # Check if local file exists
-            local_path = img.get('local_path')
-            if local_path and Path(local_path).exists():
-                # Generate presigned URL if S3 URL exists
-                presigned_url = None
-                s3_url = img.get('s3_url')
-                if s3_url and st.session_state.dpa_automator:
-                    presigned_url = st.session_state.dpa_automator.generate_presigned_url(s3_url, expiration=86400)  # 24 hours
+            # Apply product ID filter
+            if selected_product_id != "All" and product.get('product_id') != selected_product_id:
+                continue
+            
+            for img in assets.get('images', []):
+                # Apply method filter
+                if selected_method != "All" and img.get('method') != selected_method:
+                    continue
                 
-                all_images.append({
-                    'path': local_path,
+                # Check if we have either local file or S3 URL
+                local_path = img.get('local_path')
+                s3_url = img.get('s3_url')
+                has_local_file = local_path and Path(local_path).exists()
+                
+                # Include image if we have either a local file or S3 URL
+                if has_local_file or s3_url:
+                    # Create unique identifier for this image
+                    unique_id = f"{product.get('product_id', '')}_{img.get('scene_name', '')}_{img.get('size', '')}_{img.get('method', '')}"
+                    
+                    # Skip if we've already seen this image
+                    if unique_id in seen_images:
+                        continue
+                    seen_images.add(unique_id)
+                    
+                    # Generate presigned URL if S3 URL exists
+                    presigned_url = None
+                    if s3_url and st.session_state.dpa_automator:
+                        presigned_url = st.session_state.dpa_automator.generate_presigned_url(s3_url, expiration=86400)  # 24 hours
+                    
+                    # Try to find local file by pattern matching if no local_path
+                    if not has_local_file and s3_url:
+                        product_id = product.get('product_id', '')
+                        scene_name = img.get('scene_name', '')
+                        size = img.get('size', '')
+                        
+                        if product_id and scene_name:
+                            # Try common filename patterns
+                            possible_patterns = [
+                                f"dpa_outpaint_{product_id}_{scene_name}_{size}_*.png",
+                                f"dpa_outpaint_{product_id}_*_{scene_name}_{size}_*.png",
+                                f"dpa_outpaint_{product_id}_*{scene_name}*_{size}_*.png",
+                                f"dpa_outpaint_{product_id}_*{scene_name[:30]}*_{size}_*.png",  # Truncated scene name
+                                f"dpa_outpaint_{product_id}_*{scene_name[:20]}*_{size}_*.png",  # More truncated
+                                f"dpa_outpaint_{product_id}_*_{size}_*.png"  # Just product and size as fallback
+                            ]
+                            
+                            results_dir = Path("generated_ads")
+                            for pattern in possible_patterns:
+                                matching_files = list(results_dir.glob(pattern))
+                                if matching_files:
+                                    # Use the first match
+                                    local_path = str(matching_files[0])
+                                    has_local_file = True
+                                    break
+                    
+                    all_images.append({
+                        'path': local_path,
+                        'product_name': product.get('name', 'Unknown'),
+                        'product_id': product.get('product_id', 'Unknown'),
+                        'size': img.get('size', 'Unknown'),
+                        'method': img.get('method', 'unknown'),
+                        'prompt': img.get('prompt', 'No prompt available'),
+                        'negative_prompt': img.get('negative_prompt', ''),
+                        'image_type': img.get('image_type', 'unknown'),
+                        'enhancement': img.get('enhancement', ''),
+                        'vto_category': img.get('vto_category', ''),
+                        's3_url': s3_url,
+                        'presigned_url': presigned_url,
+                        'price': product.get('price', 0),
+                        'category': product.get('category', 'Unknown'),
+                        'scene_name': img.get('scene_name', ''),
+                        'has_local_file': has_local_file,
+                        'ai_scoring': img.get('ai_scoring')  # Include AI scoring data
+                    })
+    
+        if not all_images:
+            st.info("No images found matching the selected filters.")
+        else:
+            st.info(f"Showing {len(all_images)} generated images")
+            
+            # Debug: Show processed all_images data
+            with st.expander("🔍 Debug: Processed Images Data"):
+                st.write(f"Total unique images found: {len(all_images)}")
+                st.write(f"Seen images count: {len(seen_images)}")
+                
+                # Show first few images data for debugging
+                for i, img_data in enumerate(all_images[:10]):  # Show first 10
+                    st.write(f"**Image {i+1}:**")
+                    st.json({
+                        'product_id': img_data.get('product_id'),
+                        'scene_name': img_data.get('scene_name'),
+                        'size': img_data.get('size'),
+                        'method': img_data.get('method'),
+                        'path': img_data.get('path'),
+                        's3_url': img_data.get('s3_url'),
+                        'has_local_file': img_data.get('has_local_file')
+                    })
+                
+                if len(all_images) > 10:
+                    st.write(f"... and {len(all_images) - 10} more images")
+            
+            # Display images in grid
+            for idx in range(0, len(all_images), images_per_row):
+                cols = st.columns(images_per_row)
+                print(f"i:{idx}")
+                for j, col in enumerate(cols):
+                    k = j + idx
+                    if k < len(all_images):
+                        img_data = all_images[k]
+
+                        with col:
+                            try:
+                                image_displayed = False
+                                
+                                # Try to display image from multiple sources
+                                # 1. Try presigned URL first (best for S3 images)
+                                if img_data.get('presigned_url'):
+                                    st.image(img_data['presigned_url'], use_container_width=True)
+                                    image_displayed = True
+                                
+                                # 2. Try S3 URL if presigned URL failed
+                                elif img_data.get('s3_url'):
+                                    st.image(img_data['s3_url'], use_container_width=True)
+                                    image_displayed = True
+                                
+                                # 3. Try local path as fallback
+                                elif img_data.get('path') and Path(img_data['path']).exists():
+                                    st.image(img_data['path'], use_container_width=True)
+                                    image_displayed = True
+                                
+                                # 4. If no image could be displayed, show placeholder
+                                if not image_displayed:
+                                    st.error("🖼️ Image not available")
+                                    st.caption("No valid image source found")
+                                
+                                # Image metadata (always show, even if image failed)
+                                st.markdown(f"""
+                                **{img_data['product_name']}**  
+                                ID: `{img_data['product_id']}`  
+                                Size: {img_data['size']}  
+                                Method: {img_data['method']}  
+                                Price: ${img_data['price']:.2f}  
+                                Category: {img_data['category']}
+                                """)
+                        
+                                # Show generation details
+                                if img_data['image_type']:
+                                    st.caption(f"Type: {img_data['image_type']}")
+                                if img_data['enhancement']:
+                                    st.caption(f"Enhancement: {img_data['enhancement']}")
+                                if img_data['vto_category']:
+                                    st.caption(f"VTO Category: {img_data['vto_category']}")
+                                
+                                # Show AI scoring if available
+                                if img_data.get('ai_scoring'):
+                                    scoring_results = img_data['ai_scoring']
+                                    
+                                    # Check if scoring was successful
+                                    claude_success = scoring_results.get('claude_results', {}).get('success', False)
+                                    nova_success = scoring_results.get('nova_results', {}).get('success', False)
+                                    
+                                    if claude_success or nova_success:
+                                        # Calculate total scores
+                                        def calculate_total_score(scores_dict):
+                                            categories = ['visual_quality', 'product_presentation', 'advertising_effectiveness', 
+                                                        'technical_execution', 'image_harmony', 'image_rationality',
+                                                        'overall_commercial_appeal']
+                                            total = 0
+                                            for category in categories:
+                                                if category in scores_dict:
+                                                    score = scores_dict[category].get('score', 0)
+                                                    total += score
+                                            return total
+                                        
+                                        claude_total = 0
+                                        nova_total = 0
+                                        
+                                        if claude_success:
+                                            claude_scores = scoring_results['claude_results']['scores']
+                                            claude_total = calculate_total_score(claude_scores)
+                                        
+                                        if nova_success:
+                                            nova_scores = scoring_results['nova_results']['scores']
+                                            nova_total = calculate_total_score(nova_scores)
+                                        
+                                        # Show summary scores as caption
+                                        if claude_success and nova_success:
+                                            avg_score = (claude_total + nova_total) / 2
+                                            st.caption(f"🤖 AI Score: {avg_score:.1f}/70 (Claude: {claude_total}, Nova: {nova_total})")
+                                        elif claude_success:
+                                            st.caption(f"🤖 AI Score: {claude_total}/70 (Claude Sonnet 4)")
+                                        elif nova_success:
+                                            st.caption(f"🤖 AI Score: {nova_total}/70 (Amazon Nova Pro)")
+                                    else:
+                                        st.caption("🤖 AI scoring failed")
+                                else:
+                                    st.caption("🤖 AI scoring not available")
+                                
+                                # Show prompts in expander
+                                with st.expander("📝 View Prompts", expanded=False):
+                                    st.markdown("**🎨 Image Prompt:**")
+                                    st.code(img_data['prompt'], language=None)
+                                    
+                                    if img_data['negative_prompt']:
+                                        st.markdown("**🚫 Negative Prompt:**")
+                                        st.code(img_data['negative_prompt'], language=None)
+                                
+                                # Show AI scoring details in expander
+                                if img_data.get('ai_scoring'):
+                                    scoring_results = img_data['ai_scoring']
+                                    claude_success = scoring_results.get('claude_results', {}).get('success', False)
+                                    nova_success = scoring_results.get('nova_results', {}).get('success', False)
+                                    
+                                    if claude_success or nova_success:
+                                        with st.expander("🤖 View AI Scores", expanded=False):
+                                            if claude_success:
+                                                st.markdown("**🧠 Claude Sonnet 4 Analysis:**")
+                                                claude_scores = scoring_results['claude_results']['scores']
+                                                
+                                                # Show scores in a more compact format
+                                                col1, col2 = st.columns(2)
+                                                
+                                                for i, (category, data) in enumerate(claude_scores.items()):
+                                                    if isinstance(data, dict) and 'score' in data:
+                                                        col = col1 if i % 2 == 0 else col2
+                                                        with col:
+                                                            st.metric(
+                                                                category.replace('_', ' ').title(),
+                                                                f"{data['score']}/10",
+                                                                help=data.get('feedback', '')
+                                                            )
+                                                
+                                                claude_total = sum(data.get('score', 0) for data in claude_scores.values() if isinstance(data, dict))
+                                                st.markdown(f"**Total: {claude_total}/70**")
+                                                
+                                                # Show summary if available
+                                                if 'summary' in scoring_results['claude_results']:
+                                                    st.markdown("**Summary:**")
+                                                    st.write(scoring_results['claude_results']['summary'])
+                                            
+                                            if nova_success:
+                                                if claude_success:
+                                                    st.markdown("---")
+                                                
+                                                st.markdown("**🚀 Amazon Nova Pro Analysis:**")
+                                                nova_scores = scoring_results['nova_results']['scores']
+                                                
+                                                # Show scores in a more compact format
+                                                col1, col2 = st.columns(2)
+                                                
+                                                for i, (category, data) in enumerate(nova_scores.items()):
+                                                    if isinstance(data, dict) and 'score' in data:
+                                                        col = col1 if i % 2 == 0 else col2
+                                                        with col:
+                                                            st.metric(
+                                                                category.replace('_', ' ').title(),
+                                                                f"{data['score']}/10",
+                                                                help=data.get('feedback', '')
+                                                            )
+                                                
+                                                nova_total = sum(data.get('score', 0) for data in nova_scores.values() if isinstance(data, dict))
+                                                st.markdown(f"**Total: {nova_total}/70**")
+                                                
+                                                # Show summary if available
+                                                if 'summary' in scoring_results['nova_results']:
+                                                    st.markdown("**Summary:**")
+                                                    st.write(scoring_results['nova_results']['summary'])
+                                
+                                # Presigned URL if available
+                                if img_data['presigned_url']:
+                                    st.markdown(f"🔗 [Download Image (24h link)]({img_data['presigned_url']})")
+                                elif img_data['s3_url'] and img_data['s3_url'] != 'N/A':
+                                    st.caption("☁️ Stored in S3 (presigned URL generation failed)")
+                                else:
+                                    st.caption("📁 Local file only")
+                                
+                                # File info
+                                if img_data.get('path'):
+                                    file_size = Path(img_data['path']).stat().st_size
+                                    st.caption(f"📁 {file_size:,} bytes")
+                                
+                            except Exception as e:
+                                st.error(f"Error loading image: {e}")
+            
+            # Detailed results table
+            st.subheader("📊 Detailed Results")
+    
+        # Add prompts analysis section
+        st.subheader("📝 Generation Prompts Analysis")
+    
+        # Collect all prompts for analysis
+        all_prompts = []
+        for result in results:
+            assets = result.get('assets', {})
+            product = result.get('product', {})
+        
+            for img in assets.get('images', []):
+                prompt_data = {
                     'product_name': product.get('name', 'Unknown'),
-                    'product_id': product.get('product_id', 'Unknown'),
-                    'size': img.get('size', 'Unknown'),
+                    'product_category': product.get('category', 'Unknown'),
                     'method': img.get('method', 'unknown'),
+                    'image_type': img.get('image_type', 'unknown'),
                     'prompt': img.get('prompt', 'No prompt available'),
                     'negative_prompt': img.get('negative_prompt', ''),
-                    'image_type': img.get('image_type', 'unknown'),
                     'enhancement': img.get('enhancement', ''),
-                    'vto_category': img.get('vto_category', ''),
-                    's3_url': s3_url,
-                    'presigned_url': presigned_url,
-                    'price': product.get('price', 0),
-                    'category': product.get('category', 'Unknown')
-                })
+                    'vto_category': img.get('vto_category', '')
+                }
+                all_prompts.append(prompt_data)
     
-    if not all_images:
-        st.info("No images found matching the selected filters.")
-        return
-    
-    st.info(f"Showing {len(all_images)} generated images")
-    
-    # Display images in grid
-    for i in range(0, len(all_images), images_per_row):
-        cols = st.columns(images_per_row)
+        if all_prompts:
+            # Prompt statistics
+            col1, col2, col3 = st.columns(3)
         
-        for j, col in enumerate(cols):
-            if i + j < len(all_images):
-                img_data = all_images[i + j]
-                
-                with col:
-                    try:
-                        # Display image
-                        image = Image.open(img_data['path'])
-                        st.image(image, use_column_width=True)
-                        
-                        # Image metadata
-                        st.markdown(f"""
-                        **{img_data['product_name']}**  
-                        ID: `{img_data['product_id']}`  
-                        Size: {img_data['size']}  
-                        Method: {img_data['method']}  
-                        Price: ${img_data['price']:.2f}  
-                        Category: {img_data['category']}
-                        """)
-                        
-                        # Show generation details
-                        if img_data['image_type']:
-                            st.caption(f"Type: {img_data['image_type']}")
-                        if img_data['enhancement']:
-                            st.caption(f"Enhancement: {img_data['enhancement']}")
-                        if img_data['vto_category']:
-                            st.caption(f"VTO Category: {img_data['vto_category']}")
-                        
-                        # Show prompts in expander
-                        with st.expander("📝 View Prompts", expanded=False):
-                            st.markdown("**🎨 Image Prompt:**")
-                            st.code(img_data['prompt'], language=None)
-                            
-                            if img_data['negative_prompt']:
+            with col1:
+                total_prompts = len(all_prompts)
+                st.metric("Total Prompts", total_prompts)
+        
+            with col2:
+                ai_enhanced = len([p for p in all_prompts if 'vto' in p['method']])
+                st.metric("AI Enhanced", ai_enhanced)
+        
+            with col3:
+                avg_prompt_length = sum(len(p['prompt']) for p in all_prompts) / len(all_prompts)
+                st.metric("Avg Prompt Length", f"{avg_prompt_length:.0f} chars")
+        
+            # Prompts by category
+            st.markdown("#### 📊 Prompts by Product Category")
+        
+            category_prompts = {}
+            for prompt_data in all_prompts:
+                category = prompt_data['product_category']
+                if category not in category_prompts:
+                    category_prompts[category] = []
+                category_prompts[category].append(prompt_data)
+        
+            for category, prompts in category_prompts.items():
+                with st.expander(f"📁 {category.title()} ({len(prompts)} prompts)", expanded=False):
+                    for i, prompt_data in enumerate(prompts[:3]):  # Show first 3 examples
+                        st.markdown(f"**Example {i+1}: {prompt_data['product_name']}**")
+                        st.markdown(f"*Method: {prompt_data['method']} | Type: {prompt_data['image_type']}*")
+                    
+                        col_pos, col_neg = st.columns(2)
+                        with col_pos:
+                            st.markdown("**🎨 Positive Prompt:**")
+                            st.code(prompt_data['prompt'], language=None)
+                    
+                        with col_neg:
+                            if prompt_data['negative_prompt']:
                                 st.markdown("**🚫 Negative Prompt:**")
-                                st.code(img_data['negative_prompt'], language=None)
-                        
-                        # Presigned URL if available
-                        if img_data['presigned_url']:
-                            st.markdown(f"🔗 [Download Image (24h link)]({img_data['presigned_url']})")
-                        elif img_data['s3_url'] and img_data['s3_url'] != 'N/A':
-                            st.caption("☁️ Stored in S3 (presigned URL generation failed)")
-                        else:
-                            st.caption("📁 Local file only")
-                        
-                        # File info
-                        file_size = Path(img_data['path']).stat().st_size
-                        st.caption(f"📁 {file_size:,} bytes")
-                        
-                    except Exception as e:
-                        st.error(f"Error loading image: {e}")
-    
-    # Detailed results table
-    st.subheader("📊 Detailed Results")
-    
-    # Add prompts analysis section
-    st.subheader("📝 Generation Prompts Analysis")
-    
-    # Collect all prompts for analysis
-    all_prompts = []
-    for result in results:
-        assets = result.get('assets', {})
-        product = result.get('product', {})
-        
-        for img in assets.get('images', []):
-            prompt_data = {
-                'product_name': product.get('name', 'Unknown'),
-                'product_category': product.get('category', 'Unknown'),
-                'method': img.get('method', 'unknown'),
-                'image_type': img.get('image_type', 'unknown'),
-                'prompt': img.get('prompt', 'No prompt available'),
-                'negative_prompt': img.get('negative_prompt', ''),
-                'enhancement': img.get('enhancement', ''),
-                'vto_category': img.get('vto_category', '')
-            }
-            all_prompts.append(prompt_data)
-    
-    if all_prompts:
-        # Prompt statistics
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            total_prompts = len(all_prompts)
-            st.metric("Total Prompts", total_prompts)
-        
-        with col2:
-            ai_enhanced = len([p for p in all_prompts if 'vto' in p['method']])
-            st.metric("AI Enhanced", ai_enhanced)
-        
-        with col3:
-            avg_prompt_length = sum(len(p['prompt']) for p in all_prompts) / len(all_prompts)
-            st.metric("Avg Prompt Length", f"{avg_prompt_length:.0f} chars")
-        
-        # Prompts by category
-        st.markdown("#### 📊 Prompts by Product Category")
-        
-        category_prompts = {}
-        for prompt_data in all_prompts:
-            category = prompt_data['product_category']
-            if category not in category_prompts:
-                category_prompts[category] = []
-            category_prompts[category].append(prompt_data)
-        
-        for category, prompts in category_prompts.items():
-            with st.expander(f"📁 {category.title()} ({len(prompts)} prompts)", expanded=False):
-                for i, prompt_data in enumerate(prompts[:3]):  # Show first 3 examples
-                    st.markdown(f"**Example {i+1}: {prompt_data['product_name']}**")
-                    st.markdown(f"*Method: {prompt_data['method']} | Type: {prompt_data['image_type']}*")
+                                st.code(prompt_data['negative_prompt'], language=None)
+                            else:
+                                st.markdown("**🚫 Negative Prompt:**")
+                                st.caption("No negative prompt used")
                     
-                    col_pos, col_neg = st.columns(2)
-                    with col_pos:
-                        st.markdown("**🎨 Positive Prompt:**")
-                        st.code(prompt_data['prompt'], language=None)
+                        if prompt_data['enhancement']:
+                            st.caption(f"Enhancement: {prompt_data['enhancement']}")
+                        if prompt_data['vto_category']:
+                            st.caption(f"VTO Category: {prompt_data['vto_category']}")
                     
-                    with col_neg:
-                        if prompt_data['negative_prompt']:
-                            st.markdown("**🚫 Negative Prompt:**")
-                            st.code(prompt_data['negative_prompt'], language=None)
-                        else:
-                            st.markdown("**🚫 Negative Prompt:**")
-                            st.caption("No negative prompt used")
-                    
-                    if prompt_data['enhancement']:
-                        st.caption(f"Enhancement: {prompt_data['enhancement']}")
-                    if prompt_data['vto_category']:
-                        st.caption(f"VTO Category: {prompt_data['vto_category']}")
-                    
-                    st.markdown("---")
+                        st.markdown("---")
                 
-                if len(prompts) > 3:
-                    st.caption(f"... and {len(prompts) - 3} more prompts in this category")
+                    if len(prompts) > 3:
+                        st.caption(f"... and {len(prompts) - 3} more prompts in this category")
     
-    # Create detailed dataframe with presigned URLs
-    detailed_data = []
-    for result in results:
-        product = result.get('product', {})
-        creative = result.get('creative', {})
-        assets = result.get('assets', {})
+        # Create detailed dataframe with presigned URLs
+        detailed_data = []
+        for result in results:
+            product = result.get('product', {})
+            creative = result.get('creative', {})
+            assets = result.get('assets', {})
         
-        # Generate presigned URLs for this product's images
-        presigned_urls = []
-        for img in assets.get('images', []):
-            s3_url = img.get('s3_url')
-            if s3_url and st.session_state.dpa_automator:
-                presigned_url = st.session_state.dpa_automator.generate_presigned_url(s3_url, expiration=86400)
-                if presigned_url:
-                    presigned_urls.append(f"[{img.get('size', 'Image')}]({presigned_url})")
+            # Generate presigned URLs for this product's images
+            presigned_urls = []
+            for img in assets.get('images', []):
+                s3_url = img.get('s3_url')
+                if s3_url and st.session_state.dpa_automator:
+                    presigned_url = st.session_state.dpa_automator.generate_presigned_url(s3_url, expiration=86400)
+                    if presigned_url:
+                        presigned_urls.append(f"[{img.get('size', 'Image')}]({presigned_url})")
         
-        # Join presigned URLs or show alternative
-        presigned_links = " | ".join(presigned_urls) if presigned_urls else "Local files only"
+            # Join presigned URLs or show alternative
+            presigned_links = " | ".join(presigned_urls) if presigned_urls else "Local files only"
         
-        detailed_data.append({
-            'Product ID': product.get('product_id', 'N/A'),
-            'Name': product.get('name', 'N/A'),
-            'Category': product.get('category', 'N/A'),
-            'Price': f"${product.get('price', 0):.2f}",
-            'Headline': creative.get('headline', 'N/A'),
-            'Images': len(assets.get('images', [])),
-            'Videos': len(assets.get('videos', [])),
-            'Generation Method': assets.get('metadata', {}).get('generation_method', 'N/A'),
-            'Download Links (24h)': presigned_links,
-            'Status': '✅ Success' if assets.get('images') or assets.get('videos') else '❌ Failed'
-        })
+            detailed_data.append({
+                'Product ID': product.get('product_id', 'N/A'),
+                'Name': product.get('name', 'N/A'),
+                'Category': product.get('category', 'N/A'),
+                'Price': f"${product.get('price', 0):.2f}",
+                'Headline': creative.get('headline', 'N/A'),
+                'Images': len(assets.get('images', [])),
+                'Videos': len(assets.get('videos', [])),
+                'Generation Method': assets.get('metadata', {}).get('generation_method', 'N/A'),
+                'Download Links (24h)': presigned_links,
+                'Status': '✅ Success' if assets.get('images') or assets.get('videos') else '❌ Failed'
+            })
     
-    if detailed_data:
-        df = pd.DataFrame(detailed_data)
-        st.dataframe(df, use_container_width=True)
+        if detailed_data:
+            df = pd.DataFrame(detailed_data)
+            st.dataframe(df, use_container_width=True)
         
-        # Download results
-        csv = df.to_csv(index=False)
-        st.download_button(
-            label="📥 Download Results CSV",
-            data=csv,
-            file_name=f"dpa_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-            mime="text/csv"
-        )
+            # Download results
+            csv = df.to_csv(index=False)
+            st.download_button(
+                label="📥 Download Results CSV",
+                data=csv,
+                file_name=f"dpa_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv"
+            )
         
-        # Next step instructions
-        st.markdown("---")
-        st.info("""
-        ### 🔄 **What's Next?**
+            # Next step instructions
+            st.markdown("---")
+            st.info("""
+            ### 🔄 **What's Next?**
         
-        **Continue Processing:** Go to **📁 Catalog Upload** in the sidebar to upload a new product catalog and generate more images.
+            **Continue Processing:** Go to **📁 Catalog Upload** in the sidebar to upload a new product catalog and generate more images.
         
-        **Create Templates:** Go to **🎨 Template Designer** in the sidebar to create custom templates for different product categories.
+            **Create Templates:** Go to **🎨 Template Designer** in the sidebar to create custom templates for different product categories.
         
-        **Process More:** Go to **🚀 Batch Processing** in the sidebar to process additional products with your existing templates.
+            **Process More:** Go to **🚀 Batch Processing** in the sidebar to process additional products with your existing templates.
         
-        💡 **Tip:** You can download the CSV results for external analysis or reporting.
-        """)
+            💡 **Tip:** You can download the CSV results for external analysis or reporting.
+            """)
 
 def main():
     """Main application"""

@@ -102,6 +102,8 @@ class DPAAutomator:
         default_config = {
             "output_directory": "generated_ads",
             "s3_bucket": DEFAULT_BUCKET,
+            "s3_upload_enabled": True,  # Enable S3 upload by default
+            "aws_region": "us-east-1",  # Default AWS region
             "image_quality": "premium",
             "video_duration": 6,
             "batch_size": 10,
@@ -436,10 +438,10 @@ class DPAAutomator:
             return None
     
     def _upload_to_s3(self, local_path: str, s3_key: str) -> Optional[str]:
-        """Upload file to S3 and return S3 URL"""
+        """Upload file to S3 and return S3 URL, with fallback to local path"""
         
         # Check if S3 upload is enabled
-        if not self.config.get("s3_upload_enabled", False):
+        if not self.config.get("s3_upload_enabled", True):
             logger.info("S3 upload disabled in configuration")
             return None
             
@@ -448,7 +450,27 @@ class DPAAutomator:
             
             logger.info(f"Uploading {local_path} to {bucket_name}/{s3_key}")
             
-            # Upload file to S3
+            # Check if local file exists
+            if not os.path.exists(local_path):
+                logger.error(f"Local file does not exist: {local_path}")
+                return None
+            
+            # Verify S3 client is available
+            if not hasattr(self, 's3_client') or self.s3_client is None:
+                logger.error("S3 client not initialized")
+                return None
+            
+            # Test bucket access first
+            try:
+                self.s3_client.head_bucket(Bucket=bucket_name)
+            except Exception as bucket_error:
+                logger.error(f"Cannot access S3 bucket '{bucket_name}': {bucket_error}")
+                logger.info("S3 upload disabled due to bucket access issues")
+                # Disable S3 upload for this session to avoid repeated failures
+                self.config["s3_upload_enabled"] = False
+                return None
+            
+            # Upload file to S3 (private by default - more secure)
             self.s3_client.upload_file(
                 local_path, 
                 bucket_name, 
@@ -456,14 +478,20 @@ class DPAAutomator:
                 ExtraArgs={'ContentType': 'image/png'}
             )
             
-            # Return S3 URL
+            # Return S3 URL (will be converted to presigned URL when needed)
             s3_url = f"s3://{bucket_name}/{s3_key}"
             logger.info(f"Successfully uploaded to S3: {s3_url}")
             return s3_url
             
+        except FileNotFoundError as e:
+            logger.error(f"File not found for S3 upload: {local_path} - {e}")
+            return None
         except Exception as e:
             logger.error(f"Failed to upload to S3: {e}")
+            logger.error(f"Bucket: {bucket_name}, Key: {s3_key}, Local path: {local_path}")
             logger.info("Continuing with local-only storage...")
+            # Disable S3 upload for this session to avoid repeated failures
+            self.config["s3_upload_enabled"] = False
             return None
     
     def generate_presigned_url(self, s3_url: str, expiration: int = 86400) -> Optional[str]:
@@ -565,7 +593,7 @@ class DPAAutomator:
         return width, height
 
     def generate_ad_assets(self, product: ProductData, creative: AdCreative, 
-                          template: DPATemplate) -> Dict[str, Any]:
+                          template: DPATemplate, progress_callback=None) -> Dict[str, Any]:
         """Generate image and video assets for the ad using product images when available"""
         
         assets = {
@@ -621,6 +649,10 @@ class DPAAutomator:
                         for scene_idx, (scene_prompt, scene_name) in enumerate(zip(scene_prompts, scene_names)):
                             logger.info(f"🖼️ Outpainting scene {scene_idx + 1}/{len(scene_prompts)}: {scene_name}")
                             
+                            # Call progress callback if provided
+                            if progress_callback:
+                                progress_callback(f"🎨 Outpainting scene {scene_idx + 1}/{len(scene_prompts)}: {scene_name[:50]}...")
+                            
                             try:
                                 resizer = NovaCanvasResizer()
                                 
@@ -633,6 +665,7 @@ class DPAAutomator:
                                     target_width=validated_width,
                                     target_height=validated_height,
                                     prompt=outpainting_prompt,
+                                    negative_prompt=creative.image_negative_prompt,
                                     quality=self.config["image_quality"]
                                 )
                                 
@@ -656,9 +689,9 @@ class DPAAutomator:
                                     # Add scene image to assets
                                     scene_asset = {
                                         "size": f"{validated_width}x{validated_height}",
-                                        "local_path": str(local_path),
                                         "s3_url": s3_url,
                                         "prompt": outpainting_prompt,
+                                        "negative_prompt": creative.image_negative_prompt,
                                         "scene_prompt": scene_prompt,  # Original scene prompt
                                         "method": "outpainting",
                                         "image_type": "outpainted_scene",
@@ -666,6 +699,32 @@ class DPAAutomator:
                                         "scene_index": scene_idx + 1,
                                         "total_scenes": len(scene_prompts)
                                     }
+                                    
+                                    # Auto-score the generated image
+                                    try:
+                                        # Try S3 URL first, fallback to local path
+                                        image_source = s3_url if s3_url else str(local_path)
+                                        
+                                        if image_source and image_source != 'None':
+                                            logger.info(f"🤖 Auto-scoring outpainted scene: {scene_name}")
+                                            logger.info(f"   Using source: {image_source}")
+                                            
+                                            from image_understanding import DPAImageAnalyzer
+                                            analyzer = DPAImageAnalyzer()
+                                            
+                                            # Score the image using flexible source (S3 URL or local path)
+                                            scoring_results = analyzer.score_image_from_path_or_url(image_source)
+                                            if scoring_results and scoring_results.get('success', True):
+                                                scene_asset["ai_scoring"] = scoring_results
+                                                logger.info(f"✅ Auto-scoring completed for scene: {scene_name}")
+                                            else:
+                                                error_msg = scoring_results.get('error', 'Unknown error') if scoring_results else 'No results'
+                                                logger.warning(f"⚠️ Auto-scoring failed for scene: {scene_name} - {error_msg}")
+                                        else:
+                                            logger.warning(f"⚠️ Skipping auto-scoring for scene {scene_name}: No valid image source")
+                                    except Exception as e:
+                                        logger.error(f"❌ Auto-scoring error for scene {scene_name}: {e}")
+                                    
                                     assets["images"].append(scene_asset)
                                     
                                     logger.info(f"✅ Outpainted scene {scene_idx + 1} completed: {scene_name}")
@@ -704,7 +763,6 @@ class DPAAutomator:
                                     
                                     fallback_asset = {
                                         "size": f"{validated_width}x{validated_height}",
-                                        "local_path": str(fallback_path),
                                         "s3_url": fallback_s3_url,
                                         "prompt": scene_prompt,
                                         "method": "text_to_image_fallback",
@@ -737,6 +795,10 @@ class DPAAutomator:
                         for scene_idx, (scene_prompt, scene_name) in enumerate(zip(scene_prompts, scene_names)):
                             logger.info(f"🖼️ Generating scene {scene_idx + 1}/{len(scene_prompts)}: {scene_name}")
                             
+                            # Call progress callback if provided
+                            if progress_callback:
+                                progress_callback(f"🎨 Generating scene {scene_idx + 1}/{len(scene_prompts)}: {scene_name[:50]}...")
+                            
                             image_result = generate_single_image(
                                 prompt=scene_prompt,
                                 negative_prompt=creative.image_negative_prompt,
@@ -766,7 +828,6 @@ class DPAAutomator:
                                 # Add scene image to assets
                                 scene_image_asset = {
                                     "size": f"{validated_width}x{validated_height}",
-                                    "local_path": str(scene_path),
                                     "s3_url": scene_s3_url,
                                     "prompt": scene_prompt,
                                     "negative_prompt": creative.image_negative_prompt,
@@ -776,6 +837,32 @@ class DPAAutomator:
                                     "scene_index": scene_idx + 1,
                                     "total_scenes": len(scene_prompts)
                                 }
+                                
+                                # Auto-score the generated image
+                                try:
+                                    # Try S3 URL first, fallback to local path
+                                    image_source = scene_s3_url if scene_s3_url else str(scene_path)
+                                    
+                                    if image_source and image_source != 'None':
+                                        logger.info(f"🤖 Auto-scoring text-to-image scene: {scene_name}")
+                                        logger.info(f"   Using source: {image_source}")
+                                        
+                                        from image_understanding import DPAImageAnalyzer
+                                        analyzer = DPAImageAnalyzer()
+                                        
+                                        # Score the image using flexible source (S3 URL or local path)
+                                        scoring_results = analyzer.score_image_from_path_or_url(image_source)
+                                        if scoring_results and scoring_results.get('success', True):
+                                            scene_image_asset["ai_scoring"] = scoring_results
+                                            logger.info(f"✅ Auto-scoring completed for scene: {scene_name}")
+                                        else:
+                                            error_msg = scoring_results.get('error', 'Unknown error') if scoring_results else 'No results'
+                                            logger.warning(f"⚠️ Auto-scoring failed for scene: {scene_name} - {error_msg}")
+                                    else:
+                                        logger.warning(f"⚠️ Skipping auto-scoring for scene {scene_name}: No valid image source")
+                                except Exception as e:
+                                    logger.error(f"❌ Auto-scoring error for scene {scene_name}: {e}")
+                                
                                 assets["images"].append(scene_image_asset)
                                 
                                 logger.info(f"✅ Scene {scene_idx + 1} generated: {scene_name}")
@@ -820,7 +907,6 @@ class DPAAutomator:
                                             # Add VTO scene image to assets
                                             vto_scene_asset = {
                                                 "size": f"{validated_width}x{validated_height}",
-                                                "local_path": str(vto_scene_path),
                                                 "s3_url": vto_scene_s3_url,
                                                 "prompt": scene_prompt,
                                                 "negative_prompt": creative.image_negative_prompt,
@@ -833,6 +919,32 @@ class DPAAutomator:
                                                 "vto_category": vto_category,
                                                 "base_scene_path": str(scene_path)
                                             }
+                                            
+                                            # Auto-score the VTO enhanced image
+                                            try:
+                                                # Try S3 URL first, fallback to local path
+                                                image_source = vto_scene_s3_url if vto_scene_s3_url else str(vto_scene_path)
+                                                
+                                                if image_source and image_source != 'None':
+                                                    logger.info(f"🤖 Auto-scoring VTO enhanced scene: {scene_name}")
+                                                    logger.info(f"   Using source: {image_source}")
+                                                    
+                                                    from image_understanding import DPAImageAnalyzer
+                                                    analyzer = DPAImageAnalyzer()
+                                                    
+                                                    # Score the image using flexible source (S3 URL or local path)
+                                                    scoring_results = analyzer.score_image_from_path_or_url(image_source)
+                                                    if scoring_results and scoring_results.get('success', True):
+                                                        vto_scene_asset["ai_scoring"] = scoring_results
+                                                        logger.info(f"✅ Auto-scoring completed for VTO scene: {scene_name}")
+                                                    else:
+                                                        error_msg = scoring_results.get('error', 'Unknown error') if scoring_results else 'No results'
+                                                        logger.warning(f"⚠️ Auto-scoring failed for VTO scene: {scene_name} - {error_msg}")
+                                                else:
+                                                    logger.warning(f"⚠️ Skipping auto-scoring for VTO scene {scene_name}: No valid image source")
+                                            except Exception as e:
+                                                logger.error(f"❌ Auto-scoring error for VTO scene {scene_name}: {e}")
+                                            
                                             assets["images"].append(vto_scene_asset)
                                             
                                             logger.info(f"✅ VTO scene {scene_idx + 1} enhanced: {scene_name}")

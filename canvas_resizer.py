@@ -110,6 +110,7 @@ class NovaCanvasResizer:
                     target_width: int, 
                     target_height: int,
                     prompt: str = "professional product photography, clean background, high quality",
+                    negative_prompt: str = "",
                     quality: str = "premium",
                     cfg_scale: float = 7.0) -> Image.Image:
         """
@@ -120,6 +121,7 @@ class NovaCanvasResizer:
             target_width: Target width in pixels
             target_height: Target height in pixels
             prompt: Text prompt for outpainting
+            negative_prompt: Negative prompt to avoid unwanted elements
             quality: Image quality ('standard' or 'premium')
             cfg_scale: CFG scale for generation control
             
@@ -135,14 +137,20 @@ class NovaCanvasResizer:
             mask_b64 = self._image_to_base64(mask)
             
             # Prepare API request
+            outpainting_params = {
+                "image": canvas_b64,
+                "maskImage": mask_b64,
+                "text": prompt,
+                "outPaintingMode": "DEFAULT"
+            }
+            
+            # Add negative prompt if provided
+            if negative_prompt:
+                outpainting_params["negativeText"] = negative_prompt
+            
             inference_params = {
                 "taskType": "OUTPAINTING",
-                "outPaintingParams": {
-                    "image": canvas_b64,
-                    "maskImage": mask_b64,
-                    "text": prompt,
-                    "outPaintingMode": "DEFAULT"
-                },
+                "outPaintingParams": outpainting_params,
                 "imageGenerationConfig": {
                     "numberOfImages": 1,
                     "height": target_height,
@@ -180,6 +188,7 @@ class NovaCanvasResizer:
     def outpaint_image(self, 
                       original_image: Image.Image,
                       prompt: str,
+                      negative_prompt: str = "",
                       mask_prompt: str = "",
                       target_width: Optional[int] = None,
                       target_height: Optional[int] = None,
@@ -191,6 +200,7 @@ class NovaCanvasResizer:
         Args:
             original_image: PIL Image object to outpaint
             prompt: Text prompt for outpainting
+            negative_prompt: Negative prompt to avoid unwanted elements
             mask_prompt: Mask prompt for specific area targeting
             target_width: Target width (optional, uses original if not specified)
             target_height: Target height (optional, uses original if not specified)

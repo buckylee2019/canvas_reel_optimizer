@@ -627,7 +627,7 @@ def display_image_with_copy_button(image_input, label=""):
             if image_input and os.path.exists(image_input):
                 col1, col2 = st.columns([3, 1])
                 with col1:
-                    st.image(image_input, caption=label, use_column_width=True)
+                    st.image(image_input, caption=label, use_container_width=True)
                 with col2:
                     if st.button(f"Copy to Video Gen", key=f"copy_{label}"):
                         st.session_state.copied_image = image_input
@@ -640,7 +640,7 @@ def display_image_with_copy_button(image_input, label=""):
                 if isinstance(first_image, str) and os.path.exists(first_image):
                     col1, col2 = st.columns([3, 1])
                     with col1:
-                        st.image(first_image, caption=label, use_column_width=True)
+                        st.image(first_image, caption=label, use_container_width=True)
                     with col2:
                         if st.button(f"Copy to Video Gen", key=f"copy_{label}"):
                             st.session_state.copied_image = first_image
@@ -650,7 +650,7 @@ def display_image_with_copy_button(image_input, label=""):
             # It's a PIL Image object
             col1, col2 = st.columns([3, 1])
             with col1:
-                st.image(image_input, caption=label, use_column_width=True)
+                st.image(image_input, caption=label, use_container_width=True)
             with col2:
                 if st.button(f"Copy to Video Gen", key=f"copy_{label}"):
                     # Save PIL Image to temporary file for copying
@@ -755,7 +755,7 @@ def main():
                 original_img = Image.open(uploaded_image)
                 col_img1, col_img2 = st.columns([1, 2])
                 with col_img1:
-                    st.image(original_img, caption=f"Original: {original_img.size[0]}×{original_img.size[1]}", use_column_width=True)
+                    st.image(original_img, caption=f"Original: {original_img.size[0]}×{original_img.size[1]}", use_container_width=True)
                 with col_img2:
                     st.info(f"**Original Size:** {original_img.size[0]} × {original_img.size[1]} pixels")
                     st.info("You can now describe what you want to add or change in the prompt below.")
@@ -1200,7 +1200,7 @@ def main():
             
             if 'copied_image' in st.session_state:
                 st.success("Image copied from Canvas!")
-                st.image(st.session_state.copied_image, caption="Copied Image", use_column_width=True)
+                st.image(st.session_state.copied_image, caption="Copied Image", use_container_width=True)
         
         # Video settings
         col1, col2, col3, col4 = st.columns(4)
@@ -1419,7 +1419,7 @@ def main():
         if long_video_uploaded_image:
             col1, col2 = st.columns([1, 2])
             with col1:
-                st.image(long_video_uploaded_image, caption="First Frame Image", use_column_width=True)
+                st.image(long_video_uploaded_image, caption="First Frame Image", use_container_width=True)
             with col2:
                 st.info("✅ First frame image uploaded! This will be used directly as the first frame of your long video, and subsequent frames will be generated to maintain visual consistency.")
         

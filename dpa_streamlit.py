@@ -30,8 +30,7 @@ from image_understanding import DPAImageAnalyzer, analyze_product_for_dpa, get_s
 st.set_page_config(
     page_title="DPA Automation Studio",
     page_icon="🎯",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    layout="wide"
 )
 
 # Custom CSS
@@ -171,14 +170,37 @@ def process_product_multiprocessing(product_data_dict):
         # Find template
         template = next(t for t in automator.templates if t.template_id == template_id)
         
+        # Check if AI Suggest is disabled in template
+        use_ai_suggest = getattr(template, 'use_ai_suggest', True)  # Default to True for backward compatibility
+        
         # Create creative
         creative = automator.create_ad_creative(product, template)
         
         if enable_optimization:
             creative = automator.optimize_creative(creative, product)
         
-        # Generate assets
-        assets = automator.generate_ad_assets(product, creative, template)
+        # Generate assets with AI Suggest setting
+        if hasattr(automator, 'generate_ad_assets_with_config'):
+            # Use new method that respects AI Suggest setting
+            assets = automator.generate_ad_assets_with_config(product, creative, template, use_ai_suggest=use_ai_suggest)
+        else:
+            # Fallback to original method
+            assets = automator.generate_ad_assets(product, creative, template)
+            
+            # If AI Suggest is disabled, modify the generation process
+            if not use_ai_suggest:
+                # Use template's manual scene configuration
+                scene_method = getattr(template, 'scene_method', 'ai_suggest')
+                if scene_method == 'text_description':
+                    scene_description = getattr(template, 'scene_description', '')
+                    if scene_description:
+                        # Override AI-generated scenes with manual description
+                        assets = automator.generate_assets_with_scene_description(product, creative, template, scene_description)
+                elif scene_method == 'reference_image':
+                    reference_image_name = getattr(template, 'reference_image_name', '')
+                    if reference_image_name:
+                        # Override AI-generated scenes with reference image
+                        assets = automator.generate_assets_with_reference_image(product, creative, template, reference_image_name)
         
         return {
             "success": True,
@@ -260,7 +282,8 @@ def render_catalog_upload():
     uploaded_file = st.file_uploader(
         "Upload your product catalog",
         type=['csv', 'json', 'xlsx'],
-        help="Supported formats: CSV, JSON, Excel"
+        help="Supported formats: CSV, JSON, Excel",
+        key="catalog_uploader"
     )
     
     if uploaded_file is not None:
@@ -312,7 +335,7 @@ def render_catalog_upload():
                         f"Map '{field}' to:",
                         options=[''] + list(df.columns),
                         index=default_index,
-                        key=f"map_{field}"
+                        key=f"map_required_{field}"
                     )
             
             with col2:
@@ -330,7 +353,7 @@ def render_catalog_upload():
                         f"Map '{field}' to:",
                         options=[''] + list(df.columns),
                         index=default_index,
-                        key=f"map_{field}"
+                        key=f"map_optional_{field}"
                     )
             
             # Validation
@@ -368,9 +391,9 @@ def render_catalog_upload():
                     st.info("""
                     ### 🚀 **Next Steps:**
                     
-                    **Option 1 (Recommended):** Go to **🎨 Template Designer** in the sidebar to create custom templates for better results.
+                    **Option 1 (Recommended):** Go to **🎨 Template Designer** tab to create custom templates for better results.
                     
-                    **Option 2 (Quick Start):** Go directly to **🚀 Batch Processing** in the sidebar to start generating images with default templates.
+                    **Option 2 (Quick Start):** Go directly to **🚀 Batch Processing** tab to start generating images with default templates.
                     
                     💡 **Tip:** Custom templates produce more targeted and effective product advertisements.
                     """)
@@ -384,7 +407,7 @@ def render_template_designer():
     
     if st.session_state.dpa_automator is None:
         st.error("🔧 DPA Automator not initialized yet.")
-        st.info("💡 **Next Step:** Use the sidebar to navigate to **📁 Catalog Upload** and upload your product catalog first.")
+        st.info("💡 **Next Step:** Use the **📁 Catalog Upload** tab to upload your product catalog first.")
         return
     
     # Template selection
@@ -447,6 +470,52 @@ def render_template_designer():
                 help="Use {field_name} for dynamic content"
             )
             
+            # AI Suggest Configuration
+            st.markdown("### 🤖 Scene Generation Method")
+            
+            use_ai_suggest = st.checkbox(
+                "Enable AI Suggest",
+                value=True,
+                help="Use AI to automatically analyze products and suggest optimal scenes"
+            )
+            
+            if not use_ai_suggest:
+                st.markdown("#### 📸 Manual Scene Configuration")
+                
+                scene_method = st.radio(
+                    "Choose scene generation method:",
+                    options=["Reference Image", "Text Description"],
+                    help="Select how you want to define the scene for your products"
+                )
+                
+                if scene_method == "Reference Image":
+                    st.markdown("**Upload Reference Image:**")
+                    reference_image = st.file_uploader(
+                        "Upload a reference image to place your product in",
+                        type=['png', 'jpg', 'jpeg'],
+                        help="Your product will be placed in this scene",
+                        key="reference_image_uploader"
+                    )
+                    
+                    if reference_image:
+                        st.image(reference_image, caption="Reference Scene", use_container_width=True)
+                        st.success("✅ Reference image uploaded. Products will be placed in this scene.")
+                
+                elif scene_method == "Text Description":
+                    st.markdown("**Describe Your Scene:**")
+                    scene_description = st.text_area(
+                        "Scene Description",
+                        placeholder="e.g., Modern kitchen with marble countertops, natural lighting, minimalist style...",
+                        help="Describe the environment where you want to place your products",
+                        key="scene_description_input"
+                    )
+                    
+                    if scene_description:
+                        st.success("✅ Scene description provided. Products will be placed in this described environment.")
+            
+            else:
+                st.info("🤖 AI Suggest is enabled. The system will automatically analyze each product and generate optimal scenes.")
+            
             image_style = st.text_area(
                 "Image Style",
                 value=getattr(st.session_state, 'suggested_image_style', '') or (st.session_state.current_template.image_style if st.session_state.current_template else "clean product shot on white background"),
@@ -490,6 +559,36 @@ def render_template_designer():
             submitted = st.form_submit_button("💾 Save Template")
             
             if submitted and template_id and name:
+                # Prepare template data
+                template_data = {
+                    'template_id': template_id,
+                    'name': name,
+                    'platform': platform,
+                    'ad_format': ad_format,
+                    'headline_template': headline_template,
+                    'description_template': description_template,
+                    'image_style': image_style,
+                    'video_style': video_style,
+                    'image_negative_style': image_negative_style,
+                    'video_negative_style': video_negative_style,
+                    'use_virtual_try_on': use_virtual_try_on,
+                    'vto_enhancement_type': vto_enhancement_type,
+                    'use_ai_suggest': use_ai_suggest
+                }
+                
+                # Add scene configuration based on method
+                if not use_ai_suggest:
+                    if scene_method == "Reference Image" and reference_image:
+                        # Store reference image data (in real implementation, save to file)
+                        template_data['scene_method'] = 'reference_image'
+                        template_data['reference_image_name'] = reference_image.name
+                        # In production, save reference_image to storage
+                    elif scene_method == "Text Description" and scene_description:
+                        template_data['scene_method'] = 'text_description'
+                        template_data['scene_description'] = scene_description
+                else:
+                    template_data['scene_method'] = 'ai_suggest'
+                
                 # Create new template with backward compatibility
                 try:
                     # Try with negative style parameters (new version)
@@ -525,16 +624,30 @@ def render_template_designer():
                     new_template.use_virtual_try_on = use_virtual_try_on
                     new_template.vto_enhancement_type = vto_enhancement_type
                 
+                # Add custom attributes for scene configuration
+                for key, value in template_data.items():
+                    if not hasattr(new_template, key):
+                        setattr(new_template, key, value)
+                
                 # Add to automator (in real implementation, save to file)
                 st.session_state.dpa_automator.templates.append(new_template)
                 st.success(f"✅ Template '{name}' saved successfully!")
+                
+                # Show configuration summary
+                if not use_ai_suggest:
+                    if template_data.get('scene_method') == 'reference_image':
+                        st.info(f"📸 Template configured with reference image: {template_data.get('reference_image_name')}")
+                    elif template_data.get('scene_method') == 'text_description':
+                        st.info(f"📝 Template configured with scene description: {template_data.get('scene_description')[:100]}...")
+                else:
+                    st.info("🤖 Template configured with AI Suggest for automatic scene generation")
                 
                 # Next step instructions
                 st.markdown("---")
                 st.info("""
                 ### 🚀 **Next Step:**
                 
-                Your custom template is now ready! Go to **🚀 Batch Processing** in the sidebar to start generating images using your template.
+                Your custom template is now ready! Go to **🚀 Batch Processing** tab to start generating images using your template.
                 
                 💡 **Tip:** You can create multiple templates for different product categories or marketing campaigns.
                 """)
@@ -545,13 +658,13 @@ def render_batch_processing():
     
     if st.session_state.dpa_automator is None:
         st.error("🔧 DPA Automator not initialized yet.")
-        st.info("💡 **Next Step:** Use the sidebar to navigate to **📁 Catalog Upload** and upload your product catalog first.")
+        st.info("💡 **Next Step:** Use the **📁 Catalog Upload** tab to upload your product catalog first.")
         return
     
     # Check for catalog data
     if not hasattr(st.session_state, 'catalog_data'):
         st.warning("⚠️ No catalog data found. Please upload a catalog first.")
-        st.info("💡 **Next Step:** Use the sidebar to navigate to **📁 Catalog Upload** and upload your product catalog.")
+        st.info("💡 **Next Step:** Use the **📁 Catalog Upload** tab to upload your product catalog.")
         return
     
     # Processing configuration
@@ -736,6 +849,9 @@ def render_batch_processing():
                     # Find template
                     template = next(t for t in st.session_state.dpa_automator.templates if t.template_id == template_id)
                     
+                    # Check if AI Suggest is disabled in template
+                    use_ai_suggest = getattr(template, 'use_ai_suggest', True)  # Default to True for backward compatibility
+                    
                     # Create creative
                     creative = st.session_state.dpa_automator.create_ad_creative(product, template)
                     
@@ -744,9 +860,34 @@ def render_batch_processing():
                     
                     # Generate assets with progress callback
                     def progress_callback(message):
-                        status_text.text(f"🔄 Processing {idx + 1}/{total_products}: {product.name} - {message}")
+                        ai_status = "🤖 AI Suggest" if use_ai_suggest else "📝 Manual Scene"
+                        status_text.text(f"🔄 Processing {idx + 1}/{total_products}: {product.name} - {message} ({ai_status})")
                     
-                    assets = st.session_state.dpa_automator.generate_ad_assets(product, creative, template, progress_callback)
+                    # Generate assets based on AI Suggest setting
+                    if not use_ai_suggest:
+                        # Use manual scene configuration
+                        scene_method = getattr(template, 'scene_method', 'ai_suggest')
+                        if scene_method == 'text_description':
+                            scene_description = getattr(template, 'scene_description', '')
+                            if scene_description:
+                                # Use scene description instead of AI analysis
+                                progress_callback(f"Using scene description: {scene_description[:50]}...")
+                        elif scene_method == 'reference_image':
+                            reference_image_name = getattr(template, 'reference_image_name', '')
+                            if reference_image_name:
+                                progress_callback(f"Using reference image: {reference_image_name}")
+                        
+                        # Disable AI analysis for this generation
+                        original_method = getattr(st.session_state.dpa_automator, '_use_ai_analysis', True)
+                        st.session_state.dpa_automator._use_ai_analysis = False
+                        
+                        assets = st.session_state.dpa_automator.generate_ad_assets(product, creative, template, progress_callback)
+                        
+                        # Restore original setting
+                        st.session_state.dpa_automator._use_ai_analysis = original_method
+                    else:
+                        # Use AI Suggest (normal flow)
+                        assets = st.session_state.dpa_automator.generate_ad_assets(product, creative, template, progress_callback)
                     
                     result = {
                         "success": True,
@@ -851,7 +992,7 @@ def render_batch_processing():
             st.success("""
             ### 🎉 **Processing Complete!**
             
-            **Next Step:** Go to **📈 Analytics** in the sidebar to view your generated images in a beautiful gallery with download links.
+            **Next Step:** Go to **📈 Analytics** tab to view your generated images in a beautiful gallery with download links.
             
             💡 **What you'll see:**
             - Visual gallery of all generated images
@@ -1074,7 +1215,7 @@ def render_analytics():
                             st.markdown("**🎨 Scene Prompt:**")
                             st.code(base_img.get('prompt', 'No prompt available'), language=None)
                             
-                            if base_img.get('negative_prompt'):
+                            if base_img.get('negative_prompt') and not base_img.get('negative_prompt').endswith(' chars'):
                                 st.markdown("**🚫 Negative Prompt:**")
                                 st.code(base_img.get('negative_prompt'), language=None)
                             
@@ -1144,7 +1285,7 @@ def render_analytics():
                         image_prompt = base_image.get('prompt', 'No prompt available')
                         st.code(image_prompt, language=None)
                         
-                        if base_image.get('negative_prompt'):
+                        if base_image.get('negative_prompt') and not base_image.get('negative_prompt').endswith(' chars'):
                             st.markdown("**🚫 Negative Prompt:**")
                             st.code(base_image.get('negative_prompt'), language=None)
                     
@@ -1415,7 +1556,7 @@ def render_analytics():
                                     st.markdown("**🎨 Image Prompt:**")
                                     st.code(img_data['prompt'], language=None)
                                     
-                                    if img_data['negative_prompt']:
+                                    if img_data['negative_prompt'] and not img_data['negative_prompt'].endswith(' chars'):
                                         st.markdown("**🚫 Negative Prompt:**")
                                         st.code(img_data['negative_prompt'], language=None)
                                 
@@ -1559,7 +1700,7 @@ def render_analytics():
                             st.code(prompt_data['prompt'], language=None)
                     
                         with col_neg:
-                            if prompt_data['negative_prompt']:
+                            if prompt_data['negative_prompt'] and not prompt_data['negative_prompt'].endswith(' chars'):
                                 st.markdown("**🚫 Negative Prompt:**")
                                 st.code(prompt_data['negative_prompt'], language=None)
                             else:
@@ -1626,11 +1767,11 @@ def render_analytics():
             st.info("""
             ### 🔄 **What's Next?**
         
-            **Continue Processing:** Go to **📁 Catalog Upload** in the sidebar to upload a new product catalog and generate more images.
+            **Continue Processing:** Go to **📁 Catalog Upload** tab to upload a new product catalog and generate more images.
         
-            **Create Templates:** Go to **🎨 Template Designer** in the sidebar to create custom templates for different product categories.
+            **Create Templates:** Go to **🎨 Template Designer** tab to create custom templates for different product categories.
         
-            **Process More:** Go to **🚀 Batch Processing** in the sidebar to process additional products with your existing templates.
+            **Process More:** Go to **🚀 Batch Processing** tab to process additional products with your existing templates.
         
             💡 **Tip:** You can download the CSV results for external analysis or reporting.
             """)
@@ -1639,21 +1780,35 @@ def main():
     """Main application"""
     initialize_session_state()
     
-    # Render sidebar and get current page
-    current_page = render_sidebar()
+    # Header
+    st.markdown('<h1 class="main-header">🎯 DPA Automation Studio</h1>', unsafe_allow_html=True)
+    st.markdown('<p class="sub-header">Dynamic Product Advertising with Amazon Nova Canvas & Reel</p>', unsafe_allow_html=True)
     
-    # Render appropriate page
-    if current_page == "📁 Catalog Upload":
+    # Tab navigation
+    tab1, tab2, tab3, tab4 = st.tabs(["📁 Catalog Upload", "🎨 Template Designer", "🚀 Batch Processing", "📈 Analytics"])
+    
+    with tab1:
         render_catalog_upload()
-    elif current_page == "🎨 Template Designer":
+    
+    with tab2:
         render_template_designer()
-    elif current_page == "🚀 Batch Processing":
+    
+    with tab3:
         render_batch_processing()
-    elif current_page == "📈 Analytics":
+    
+    with tab4:
         render_analytics()
-    else:
-        # Default to catalog upload
-        render_catalog_upload()
+    
+    # Quick stats in sidebar (keep some sidebar functionality)
+    if st.session_state.processed_results:
+        st.sidebar.markdown("### 📊 Quick Stats")
+        total_products = len(st.session_state.processed_results)
+        st.sidebar.metric("Products Processed", total_products)
+        
+        # Count successful generations
+        successful = sum(1 for r in st.session_state.processed_results 
+                        if r.get('assets', {}).get('images') or r.get('assets', {}).get('videos'))
+        st.sidebar.metric("Successful Generations", successful)
 
 if __name__ == "__main__":
     main()

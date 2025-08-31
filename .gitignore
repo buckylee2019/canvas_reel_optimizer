@@ -211,3 +211,4 @@ logs/
 temp/
 tmp/
 *.tmp
+generated_ads/*.json

@@ -197,12 +197,15 @@ class DPAAutomator:
         image_prompts = [base_image_prompt]  # Start with base prompt
         scene_names = ["base_template"]  # Track scene names
         
+        # Check if AI Suggest is enabled in template (default to True for backward compatibility)
+        use_ai_suggest = getattr(template, 'use_ai_suggest', True)
+        
         # Store downloaded product image for reuse
         downloaded_product_image = None
         
-        # Automatic AI image analysis if product has image
+        # Automatic AI image analysis if product has image AND AI Suggest is enabled
         ai_analysis = None
-        if hasattr(product, 'image_url') and product.image_url:
+        if hasattr(product, 'image_url') and product.image_url and use_ai_suggest:
             try:
                 logger.info(f"🧠 Performing automatic AI analysis for {product.name}")
                 
@@ -258,6 +261,34 @@ class DPAAutomator:
                         
             except Exception as e:
                 logger.error(f"❌ Error in automatic AI analysis for {product.name}: {e}")
+        elif not use_ai_suggest:
+            # AI Suggest is disabled - use manual scene configuration
+            logger.info(f"📝 AI Suggest disabled for {product.name}, using manual scene configuration")
+            
+            scene_method = getattr(template, 'scene_method', 'text_description')
+            if scene_method == 'text_description':
+                scene_description = getattr(template, 'scene_description', '')
+                if scene_description:
+                    logger.info(f"📝 Using manual scene description: {scene_description[:100]}...")
+                    # Create single scene prompt from description
+                    scene_prompt = f"{scene_description}, professional photography, high quality"
+                    image_prompts = [scene_prompt]
+                    scene_names = ["manual_scene_1"]
+                else:
+                    logger.warning("⚠️ No scene description provided in template")
+            elif scene_method == 'reference_image':
+                reference_image_name = getattr(template, 'reference_image_name', '')
+                if reference_image_name:
+                    logger.info(f"📸 Using reference image: {reference_image_name}")
+                    # Use reference image for outpainting (implementation depends on your setup)
+                    scene_prompt = f"Place product in reference scene from {reference_image_name}, professional photography, high quality"
+                    image_prompts = [scene_prompt]
+                    scene_names = ["reference_scene_1"]
+                else:
+                    logger.warning("⚠️ No reference image provided in template")
+        else:
+            # No image URL and AI Suggest enabled - fallback to basic prompt
+            logger.info(f"ℹ️ No product image available for {product.name}, using basic template prompt")
         
         creative = AdCreative(
             headline=headline,
